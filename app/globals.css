@@ -1,26 +1,53 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --missence-color-bg: #dadada;
+  --missence-color-accent: #fe347e;
+  --missence-color-text: #141414;
+  --missence-color-muted: #6d6d6d;
+  --missence-color-border: #bfbfbf;
+  --missence-color-white: #ffffff;
+  --missence-color-bg-rgb: 218, 218, 218;
+  --missence-color-accent-rgb: 254, 52, 126;
+  --missence-color-text-rgb: 20, 20, 20;
+  --missence-color-muted-rgb: 109, 109, 109;
+  --missence-color-border-rgb: 191, 191, 191;
+  --missence-color-white-rgb: 255, 255, 255;
+  --missence-page-width: 1512px;
+  --missence-content-width: 1464px;
+  --missence-text-block-width: 1416px;
+  --missence-shell-padding-x: 24px;
+  --missence-shell-padding-wide-x: 48px;
+  --missence-radius-sm: 12px;
+  --missence-radius-md: 16px;
+  --missence-radius-lg: 24px;
+  --missence-radius-pill: 999px;
+  --missence-radius-none: 0;
+  --missence-overlay-dark-soft: rgba(0, 0, 0, 0.18);
+  --missence-overlay-light-soft: rgba(255, 255, 255, 0.4);
+  --missence-shadow-text-soft: 0 6px 24px rgba(0, 0, 0, 0.18);
 }
 
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
+  --color-background: var(--missence-color-bg);
+  --color-foreground: var(--missence-color-text);
+  --color-missence-bg: var(--missence-color-bg);
+  --color-missence-accent: var(--missence-color-accent);
+  --color-missence-text: var(--missence-color-text);
+  --color-missence-muted: var(--missence-color-muted);
+  --color-missence-border: var(--missence-color-border);
+  --color-missence-white: var(--missence-color-white);
+  --radius-missence-sm: var(--missence-radius-sm);
+  --radius-missence-md: var(--missence-radius-md);
+  --radius-missence-lg: var(--missence-radius-lg);
+  --radius-missence-pill: var(--missence-radius-pill);
+  --radius-missence-none: var(--missence-radius-none);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
-}
-
 body {
-  background: var(--background);
-  color: var(--foreground);
+  background: var(--missence-color-bg);
+  color: var(--missence-color-text);
   font-family: Arial, Helvetica, sans-serif;
 }
