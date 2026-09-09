@@ -21,6 +21,7 @@ const SHOPIFY_TOPIC = "orders/create";
 export async function POST(request: Request): Promise<Response> {
   const rawBody = await request.text();
   const webhookId = request.headers.get("x-shopify-webhook-id") ?? undefined;
+  let shopifyOrderId: string | undefined;
 
   try {
     const webhookSecret = getShopifyWebhookSecret();
@@ -40,11 +41,12 @@ export async function POST(request: Request): Promise<Response> {
     }
 
     const order = parseShopifyOrder(rawBody);
+    shopifyOrderId = String(order.id);
     const adjustment = detectFirstShipmentAdjustment(order);
 
     if (!adjustment.shouldAdjust) {
       logIntegrationEvent("ignored_no_pair", {
-        shopifyOrderId: String(order.id),
+        shopifyOrderId,
         webhookId,
       });
 
@@ -87,6 +89,7 @@ export async function POST(request: Request): Promise<Response> {
         bigblueCode: error.code,
         bigblueStatus: error.status,
         retryable: error.retryable,
+        shopifyOrderId,
         webhookId,
       });
       return Response.json(
@@ -95,13 +98,14 @@ export async function POST(request: Request): Promise<Response> {
           retryable: error.retryable,
           error: "bigblue_api_error",
         },
-        { status: error.retryable ? 503 : 502 },
+        { status: error.status === 412 ? 409 : error.retryable ? 503 : 502 },
       );
     }
 
     if (error instanceof InvalidBigblueResponseError) {
       logIntegrationEvent("update_failed", {
         reason: "invalid_bigblue_response",
+        shopifyOrderId,
         webhookId,
       });
       return Response.json(
@@ -112,6 +116,7 @@ export async function POST(request: Request): Promise<Response> {
 
     logIntegrationEvent("update_failed", {
       reason: "unexpected_error",
+      shopifyOrderId,
       webhookId,
     });
     return Response.json(
@@ -120,4 +125,3 @@ export async function POST(request: Request): Promise<Response> {
     );
   }
 }
-

@@ -1,6 +1,6 @@
 const BIGBLUE_BASE_URL =
   "https://api.bigblue.co/bigblue.storeapi.v1.PublicAPI";
-const DEFAULT_TIMEOUT_MS = 5_000;
+const DEFAULT_TIMEOUT_MS = 2_000;
 
 export type BigblueRequest = <TRequest, TResponse>(
   method: string,

@@ -5,6 +5,7 @@ import type { FirstShipmentAdjustment } from "@/lib/subscriptions/first-shipment
 const ORDER_SEARCH_WINDOW_MS = 60 * 60 * 1_000;
 const LIST_ORDERS_PAGE_SIZE = 100;
 const MAX_LIST_ORDER_PAGES = 20;
+const MAX_RETRY_AFTER_MS = 8_000;
 
 const MUTABLE_ORDER_FIELDS = [
   "id",
@@ -261,7 +262,7 @@ export async function findBigblueOrderWithRetry(
         throw error;
       }
 
-      retryAfterMs = error.retryAfterMs ?? 0;
+      retryAfterMs = Math.min(error.retryAfterMs ?? 0, MAX_RETRY_AFTER_MS);
     }
   }
 
@@ -343,4 +344,3 @@ export async function updateBigblueOrder(
 ): Promise<void> {
   await request<UpdateOrderPayload, unknown>("UpdateOrder", payload);
 }
-

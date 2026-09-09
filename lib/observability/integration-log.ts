@@ -16,9 +16,20 @@ export function logIntegrationEvent(
   event: IntegrationEvent,
   context: LogContext = {},
 ): void {
-  console.info("bigblue_subscription_adjustment", {
+  const payload = {
     event,
     ...context,
-  });
-}
+  };
 
+  if (event === "update_failed") {
+    console.error("bigblue_subscription_adjustment", payload);
+    return;
+  }
+
+  if (event === "invalid_shopify_hmac" || event === "bigblue_not_ready") {
+    console.warn("bigblue_subscription_adjustment", payload);
+    return;
+  }
+
+  console.info("bigblue_subscription_adjustment", payload);
+}

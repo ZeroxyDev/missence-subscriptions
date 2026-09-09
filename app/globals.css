@@ -26,6 +26,7 @@
   --missence-overlay-dark-soft: rgba(0, 0, 0, 0.18);
   --missence-overlay-light-soft: rgba(255, 255, 255, 0.4);
   --missence-shadow-text-soft: 0 6px 24px rgba(0, 0, 0, 0.18);
+  --missence-font-sans: Arial, Helvetica, sans-serif;
 }
 
 @theme inline {
@@ -42,12 +43,27 @@
   --radius-missence-lg: var(--missence-radius-lg);
   --radius-missence-pill: var(--missence-radius-pill);
   --radius-missence-none: var(--missence-radius-none);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --font-sans: var(--missence-font-sans);
+}
+
+html {
+  scroll-behavior: smooth;
 }
 
 body {
+  margin: 0;
   background: var(--missence-color-bg);
   color: var(--missence-color-text);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--missence-font-sans);
+}
+
+::selection {
+  background: var(--missence-color-accent);
+  color: var(--missence-color-text);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
 }

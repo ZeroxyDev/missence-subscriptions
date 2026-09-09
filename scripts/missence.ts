@@ -85,7 +85,7 @@ async function chooseCommand(): Promise<CommandName | null> {
     return null;
   }
 
-  return selected;
+  return selected as CommandName;
 }
 
 function runPackageScript(
@@ -122,7 +122,9 @@ async function main(): Promise<void> {
   }
 
   intro("MISSENCE · project tools");
-  const commandName = argument ?? (await chooseCommand());
+  const commandName: CommandName | null = argument
+    ? (argument as CommandName)
+    : await chooseCommand();
 
   if (!commandName) {
     return;
@@ -148,4 +150,3 @@ main().catch((error: unknown) => {
   cancel(message);
   process.exitCode = 1;
 });
-
