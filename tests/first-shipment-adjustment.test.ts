@@ -24,7 +24,7 @@ const subscription0002 = {
   sku: "MISS-000000-0002",
   variant_id: 10791019643207,
 };
-const oneTime0004 = {
+const experience0004 = {
   sku: "MISS-000000-0004",
   variant_id: 10897754554695,
 };
@@ -32,7 +32,7 @@ const subscription0001 = {
   sku: "MISS-000000-0001",
   variant_id: 10790886310215,
 };
-const oneTime0003 = {
+const experience0003 = {
   sku: "MISS-000000-0003",
   variant_id: 10897753637191,
 };
@@ -46,7 +46,7 @@ describe("detectFirstShipmentAdjustment", () => {
     it(`sets target ${targetQuantity} for pair 0002/0004 at quantity ${quantity}`, () => {
       const result = detectFirstShipmentAdjustment(
         createOrder([
-          { ...oneTime0004, quantity: 1 },
+          { ...experience0004, quantity: 1 },
           { ...subscription0002, quantity },
         ]),
       );
@@ -54,7 +54,8 @@ describe("detectFirstShipmentAdjustment", () => {
       assert.equal(result.shouldAdjust, true);
       if (result.shouldAdjust) {
         assert.equal(result.targetQuantity, targetQuantity);
-        assert.equal(result.originalQuantity, quantity);
+        assert.equal(result.subscriptionQuantity, quantity);
+        assert.equal(result.experienceQuantity, 1);
       }
     });
   }
@@ -67,9 +68,9 @@ describe("detectFirstShipmentAdjustment", () => {
     assert.deepEqual(result, { shouldAdjust: false });
   });
 
-  it("ignores a one-time product without its subscription", () => {
+  it("ignores an experience without its subscription", () => {
     const result = detectFirstShipmentAdjustment(
-      createOrder([{ ...oneTime0004, quantity: 1 }]),
+      createOrder([{ ...experience0004, quantity: 1 }]),
     );
 
     assert.deepEqual(result, { shouldAdjust: false });
@@ -82,7 +83,7 @@ describe("detectFirstShipmentAdjustment", () => {
     it(`adjusts pair 0001/0003 from ${quantity} to ${targetQuantity}`, () => {
       const result = detectFirstShipmentAdjustment(
         createOrder([
-          { ...oneTime0003, quantity: 1 },
+          { ...experience0003, quantity: 1 },
           { ...subscription0001, quantity },
         ]),
       );
@@ -97,7 +98,7 @@ describe("detectFirstShipmentAdjustment", () => {
   it("requires both the SKU and variant ID", () => {
     const result = detectFirstShipmentAdjustment(
       createOrder([
-        { ...oneTime0004, quantity: 1 },
+        { ...experience0004, quantity: 1 },
         { ...subscription0002, variant_id: 999, quantity: 2 },
       ]),
     );
@@ -108,7 +109,7 @@ describe("detectFirstShipmentAdjustment", () => {
   it("sums duplicate Shopify subscription lines deterministically", () => {
     const result = detectFirstShipmentAdjustment(
       createOrder([
-        { ...oneTime0004, quantity: 1 },
+        { ...experience0004, quantity: 1 },
         { ...subscription0002, quantity: 1 },
         { ...subscription0002, quantity: 2 },
       ]),
@@ -116,9 +117,38 @@ describe("detectFirstShipmentAdjustment", () => {
 
     assert.equal(result.shouldAdjust, true);
     if (result.shouldAdjust) {
-      assert.equal(result.originalQuantity, 3);
+      assert.equal(result.subscriptionQuantity, 3);
       assert.equal(result.targetQuantity, 2);
     }
   });
-});
 
+  it("subtracts one subscription unit for every experience unit", () => {
+    const result = detectFirstShipmentAdjustment(
+      createOrder([
+        { ...experience0004, quantity: 2 },
+        { ...subscription0002, quantity: 3 },
+      ]),
+    );
+
+    assert.equal(result.shouldAdjust, true);
+    if (result.shouldAdjust) {
+      assert.equal(result.experienceQuantity, 2);
+      assert.equal(result.subscriptionQuantity, 3);
+      assert.equal(result.targetQuantity, 1);
+    }
+  });
+
+  it("never produces a negative target quantity", () => {
+    const result = detectFirstShipmentAdjustment(
+      createOrder([
+        { ...experience0004, quantity: 2 },
+        { ...subscription0002, quantity: 1 },
+      ]),
+    );
+
+    assert.equal(result.shouldAdjust, true);
+    if (result.shouldAdjust) {
+      assert.equal(result.targetQuantity, 0);
+    }
+  });
+});

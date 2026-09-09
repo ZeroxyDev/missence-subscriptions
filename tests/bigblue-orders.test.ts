@@ -14,8 +14,9 @@ const adjustment = {
   pair: "MISS_0002_0004",
   shopifyOrderId: "123456789",
   subscriptionSku: "MISS-000000-0002",
-  oneTimeSku: "MISS-000000-0004",
-  originalQuantity: 2,
+  experienceSku: "MISS-000000-0004",
+  subscriptionQuantity: 2,
+  experienceQuantity: 1,
   targetQuantity: 1,
 } as const;
 
@@ -49,7 +50,7 @@ describe("planBigblueLineItemAdjustment", () => {
   it("removes the subscription line when the target is zero", () => {
     const zeroAdjustment = {
       ...adjustment,
-      originalQuantity: 1,
+      subscriptionQuantity: 1,
       targetQuantity: 0,
     };
     const plan = planBigblueLineItemAdjustment(
@@ -69,7 +70,7 @@ describe("planBigblueLineItemAdjustment", () => {
   it("treats an absent zero-target line as already adjusted", () => {
     const plan = planBigblueLineItemAdjustment(
       [{ product: "MISS-000000-0004", quantity: 1 }],
-      { ...adjustment, originalQuantity: 1, targetQuantity: 0 },
+      { ...adjustment, subscriptionQuantity: 1, targetQuantity: 0 },
     );
 
     assert.equal(plan.alreadyAdjusted, true);
@@ -111,6 +112,18 @@ describe("buildUpdateOrderPayload", () => {
 });
 
 describe("findBigblueOrder", () => {
+  it("treats an empty object response as an empty page", async () => {
+    const request = (async () => ({})) as BigblueRequest;
+
+    const order = await findBigblueOrder(
+      request,
+      "123456789",
+      "2026-09-09T10:00:00.000Z",
+    );
+
+    assert.equal(order, null);
+  });
+
   it("paginates and matches external_id as a string", async () => {
     const pageTokens: string[] = [];
     const request: BigblueRequest = async <TRequest, TResponse>(
@@ -118,8 +131,21 @@ describe("findBigblueOrder", () => {
       payload: TRequest,
     ) => {
       assert.equal(method, "ListOrders");
-      const token = (payload as { page_token: string }).page_token;
+      const listOrdersPayload = payload as {
+        date_range: { from: string; to: string };
+        page_token: string;
+      };
+      const token = listOrdersPayload.page_token;
       pageTokens.push(token);
+
+      assert.match(
+        listOrdersPayload.date_range.from,
+        /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/,
+      );
+      assert.match(
+        listOrdersPayload.date_range.to,
+        /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/,
+      );
 
       return (token === ""
         ? { orders: [], next_page_token: "next" }
@@ -145,4 +171,3 @@ describe("findBigblueOrder", () => {
     assert.deepEqual(pageTokens, ["", "next"]);
   });
 });
-

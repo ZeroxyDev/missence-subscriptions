@@ -34,6 +34,11 @@ const COMMANDS = {
     hint: "types + lint + tests",
     script: "check",
   },
+  "dry-run": {
+    label: "Probar conexión con Bigblue",
+    hint: "solo lectura, no modifica pedidos",
+    script: "dry-run:bigblue",
+  },
   build: {
     label: "Crear build de producción",
     hint: "validación final de Next.js",

@@ -10,6 +10,7 @@
     "typecheck": "tsc --noEmit",
     "test": "tsx --test tests/*.test.ts",
     "check": "tsc --noEmit && eslint && tsx --test tests/*.test.ts",
+    "dry-run:bigblue": "tsx --env-file=.env scripts/bigblue-dry-run.ts",
     "missence": "tsx scripts/missence.ts"
   },
   "dependencies": {

@@ -38,21 +38,30 @@ pnpm missence typecheck
 pnpm missence lint
 pnpm missence test
 pnpm missence check
+pnpm missence dry-run
 pnpm missence build
 pnpm missence --help
 ```
 
 `check` ejecuta tipos, lint y tests sin hacer una build. La build queda reservada para la validación final o CI.
 
+`dry-run` comprueba las reglas configuradas y hace una consulta `ListOrders` de una sola página a Bigblue. Es estrictamente de solo lectura: no llama a `UpdateOrder` ni muestra información de pedidos.
+
 ## Variables de entorno
 
 ```env
 SHOPIFY_WEBHOOK_SECRET=
+SHOPIFY_STORE_DOMAIN=missence.com
+SHOPIFY_PUBLIC_ACCESS_TOKEN=
+SHOPIFY_PRIVATE_ACCESS_TOKEN=
 BIGBLUE_API_KEY=
 BIGBLUE_WEBHOOK_KEY=
 ```
 
 - `SHOPIFY_WEBHOOK_SECRET`: client secret de la app Shopify utilizado para verificar `X-Shopify-Hmac-SHA256`. Por compatibilidad también se admite el nombre actual `SHOPIFY_WEBHOOK_KEY`.
+- `SHOPIFY_STORE_DOMAIN`: dominio usado para consultar Storefront API. Si se omite, utiliza `missence.com`.
+- `SHOPIFY_PRIVATE_ACCESS_TOKEN`: token privado de Storefront API utilizado únicamente en servidor para comprobar la conexión con Shopify.
+- `SHOPIFY_PUBLIC_ACCESS_TOKEN`: token público disponible para futuros usos en cliente; el flujo actual no lo necesita.
 - `BIGBLUE_API_KEY`: API key enviada como `Authorization: Bearer ...` a la Store API.
 - `BIGBLUE_WEBHOOK_KEY`: shared secret para verificar futuros webhooks entrantes de Bigblue. No se usa en el flujo Shopify → Bigblue. El nombre existente `BIGBLUE_WEBHOOKE_KEY` puede permanecer mientras no recibamos esos webhooks.
 
@@ -90,20 +99,23 @@ X-Shopify-Topic: orders/create
 
 ### Parejas configuradas
 
-| Pareja | Suscripción | Variant | Compra única | Variant |
+| Pareja | Suscripción | Variant | Experiencia | Variant |
 | --- | --- | ---: | --- | ---: |
 | `MISS_0002_0004` | `MISS-000000-0002` | `10791019643207` | `MISS-000000-0004` | `10897754554695` |
 | `MISS_0001_0003` | `MISS-000000-0001` | `10790886310215` | `MISS-000000-0003` | `10897753637191` |
 
-Se tienen que encontrar simultáneamente el SKU y el variant ID de ambos productos. Una renovación solo contiene la suscripción y se ignora.
+Se tienen que encontrar simultáneamente el SKU y el variant ID de ambos productos. La experiencia solo aparece en el checkout inicial o cuando el cliente vuelve a suscribirse; su presencia junto a la suscripción es el marcador del primer envío. Una renovación automática solo contiene la suscripción y se ignora.
 
 ### Regla de cantidad
 
 ```ts
-targetQuantity = Math.max(shopifySubscriptionQuantity - 1, 0);
+targetQuantity = Math.max(
+  shopifySubscriptionQuantity - shopifyExperienceQuantity,
+  0,
+);
 ```
 
-La cantidad objetivo siempre se deriva del webhook de Shopify, nunca de `bigblueCurrentQuantity - 1`. Por eso repetir el mismo evento converge al mismo estado.
+Cada unidad de experiencia contiene una unidad del producto, por lo que resta una unidad de la línea de suscripción. La cantidad objetivo siempre se deriva del webhook de Shopify, nunca de `bigblueCurrentQuantity - experienceQuantity`. Por eso repetir el mismo evento converge al mismo estado.
 
 Si el objetivo es cero se elimina la línea logística; no se envía `quantity: 0`. Si Bigblue ya tiene la cantidad objetivo, o la línea ya está ausente cuando el objetivo es cero, no se llama a `UpdateOrder`.
 
@@ -176,7 +188,7 @@ Antes de producción:
 3. Verificar que Shopify conserva todas sus líneas y cantidades.
 4. Verificar que Bigblue elimina o reduce únicamente la línea de suscripción.
 5. Reenviar el mismo webhook y confirmar `alreadyAdjusted`.
-6. Probar una renovación sin compra única y confirmar `no_matching_pair`.
+6. Probar una renovación sin experiencia y confirmar `no_matching_pair`.
 
 ## Frontend
 
@@ -187,24 +199,28 @@ La portada presenta el estado y el alcance de la integración con el sistema vis
 - Interfaz interna minimalista, responsive y sin apariencia de ecommerce.
 - Rosa reservado para el estado y las señales funcionales; gris, negro y bordes para la estructura.
 - Portada sencilla para identificar la aplicación y comprobar que está activa.
-- Renderizado completamente en servidor, sin JavaScript de cliente.
+- Portada renderizada en servidor con un pequeño componente cliente para actualizar el estado.
 
-Los componentes visuales están en `components/operations`.
+Los logos de la aplicación se sirven desde `public/brand`.
 
 ## Estructura relevante
 
 ```text
 app/
+  api/health/route.ts
   api/webhooks/shopify/orders-create/route.ts
   globals.css
   layout.tsx
   page.tsx
 components/operations/
 config/
+  shopify.ts
+  site.ts
   server-env.ts
   subscription-product-pairs.ts
 lib/
   bigblue/
+  health/
   observability/
   shopify/
   subscriptions/

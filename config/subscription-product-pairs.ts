@@ -5,7 +5,7 @@ export const PRODUCT_PAIRS = [
       sku: "MISS-000000-0002",
       variantId: 10791019643207,
     },
-    oneTime: {
+    experience: {
       sku: "MISS-000000-0004",
       variantId: 10897754554695,
     },
@@ -16,10 +16,9 @@ export const PRODUCT_PAIRS = [
       sku: "MISS-000000-0001",
       variantId: 10790886310215,
     },
-    oneTime: {
+    experience: {
       sku: "MISS-000000-0003",
       variantId: 10897753637191,
     },
   },
 ] as const;
-

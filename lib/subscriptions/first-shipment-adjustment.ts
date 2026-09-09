@@ -7,8 +7,9 @@ export type FirstShipmentAdjustment =
       pair: (typeof PRODUCT_PAIRS)[number]["id"];
       shopifyOrderId: string;
       subscriptionSku: string;
-      oneTimeSku: string;
-      originalQuantity: number;
+      experienceSku: string;
+      subscriptionQuantity: number;
+      experienceQuantity: number;
       targetQuantity: number;
     }
   | {
@@ -34,23 +35,28 @@ export function detectFirstShipmentAdjustment(
       .filter((lineItem) => matchesProduct(lineItem, pair.subscription))
       .reduce((total, lineItem) => total + lineItem.quantity, 0);
 
-    const hasOneTimeProduct = order.line_items.some((lineItem) =>
-      matchesProduct(lineItem, pair.oneTime),
-    );
+    const experienceQuantity = order.line_items
+      .filter((lineItem) => matchesProduct(lineItem, pair.experience))
+      .reduce((total, lineItem) => total + lineItem.quantity, 0);
 
-    if (subscriptionQuantity > 0 && hasOneTimeProduct) {
+    // The experience is only added to an initial checkout or a resubscription.
+    // Its presence alongside the subscription identifies the first shipment.
+    if (subscriptionQuantity > 0 && experienceQuantity > 0) {
       return {
         shouldAdjust: true,
         pair: pair.id,
         shopifyOrderId: String(order.id),
         subscriptionSku: pair.subscription.sku,
-        oneTimeSku: pair.oneTime.sku,
-        originalQuantity: subscriptionQuantity,
-        targetQuantity: Math.max(subscriptionQuantity - 1, 0),
+        experienceSku: pair.experience.sku,
+        subscriptionQuantity,
+        experienceQuantity,
+        targetQuantity: Math.max(
+          subscriptionQuantity - experienceQuantity,
+          0,
+        ),
       };
     }
   }
 
   return { shouldAdjust: false };
 }
-

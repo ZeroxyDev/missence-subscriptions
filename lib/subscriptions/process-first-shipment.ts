@@ -79,7 +79,8 @@ export async function processFirstShipmentAdjustment(
     bigblueOrderId: bigblueOrder.id,
     pair: adjustment.pair,
     subscriptionSku: adjustment.subscriptionSku,
-    originalQuantity: adjustment.originalQuantity,
+    subscriptionQuantity: adjustment.subscriptionQuantity,
+    experienceQuantity: adjustment.experienceQuantity,
     previousQuantity: plan.previousQuantity,
     targetQuantity: adjustment.targetQuantity,
   });
@@ -93,4 +94,3 @@ export async function processFirstShipmentAdjustment(
     targetQuantity: adjustment.targetQuantity,
   };
 }
-

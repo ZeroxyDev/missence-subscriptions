@@ -55,7 +55,7 @@ type ListOrdersRequest = {
   page_size: number;
 };
 
-type ListOrdersResponse = {
+export type ListOrdersResponse = {
   orders: unknown[];
   next_page_token?: string;
 };
@@ -122,7 +122,7 @@ function parseLineItem(value: unknown): BigblueLineItem {
   };
 }
 
-function parseOrder(value: unknown): BigblueOrder {
+export function parseBigblueOrder(value: unknown): BigblueOrder {
   if (!isRecord(value)) {
     throw new InvalidBigblueResponseError("Bigblue order must be an object");
   }
@@ -154,8 +154,13 @@ function parseOrder(value: unknown): BigblueOrder {
   };
 }
 
-function parseListOrdersResponse(value: unknown): ListOrdersResponse {
-  if (!isRecord(value) || !Array.isArray(value.orders)) {
+export function parseBigblueListOrdersResponse(
+  value: unknown,
+): ListOrdersResponse {
+  if (
+    !isRecord(value) ||
+    (value.orders !== undefined && !Array.isArray(value.orders))
+  ) {
     throw new InvalidBigblueResponseError(
       "Bigblue ListOrders response is invalid",
     );
@@ -171,7 +176,7 @@ function parseListOrdersResponse(value: unknown): ListOrdersResponse {
   }
 
   return {
-    orders: value.orders,
+    orders: value.orders ?? [],
     ...(value.next_page_token === undefined
       ? {}
       : { next_page_token: value.next_page_token }),
@@ -182,9 +187,13 @@ function getDateRange(createdAt: string): ListOrdersRequest["date_range"] {
   const createdAtMs = Date.parse(createdAt);
 
   return {
-    from: new Date(createdAtMs - ORDER_SEARCH_WINDOW_MS).toISOString(),
-    to: new Date(createdAtMs + ORDER_SEARCH_WINDOW_MS).toISOString(),
+    from: formatBigblueDateTime(new Date(createdAtMs - ORDER_SEARCH_WINDOW_MS)),
+    to: formatBigblueDateTime(new Date(createdAtMs + ORDER_SEARCH_WINDOW_MS)),
   };
+}
+
+export function formatBigblueDateTime(date: Date): string {
+  return date.toISOString().replace(/\.\d{3}Z$/, "Z");
 }
 
 export async function findBigblueOrder(
@@ -201,14 +210,14 @@ export async function findBigblueOrder(
       page_token: pageToken,
       page_size: LIST_ORDERS_PAGE_SIZE,
     });
-    const response = parseListOrdersResponse(rawResponse);
+    const response = parseBigblueListOrdersResponse(rawResponse);
 
     for (const rawOrder of response.orders) {
       if (
         isRecord(rawOrder) &&
         String(rawOrder.external_id) === shopifyOrderId
       ) {
-        return parseOrder(rawOrder);
+        return parseBigblueOrder(rawOrder);
       }
     }
 

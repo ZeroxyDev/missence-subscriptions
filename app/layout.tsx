@@ -1,9 +1,14 @@
 import type { Metadata } from "next";
+import { SITE_CONFIG } from "@/config/site";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "MISSENCE Subscriptions",
-  description: "Gestión de suscripciones de MISSENCE.",
+  title: SITE_CONFIG.title,
+  description: SITE_CONFIG.description,
+  icons: {
+    icon: SITE_CONFIG.brand.mark,
+    apple: SITE_CONFIG.brand.mark,
+  },
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
