@@ -42,6 +42,36 @@ function formatMoney(value: number): string {
   return value.toFixed(2);
 }
 
+function summarizeLineItem(lineItem: ShopifyOrderLineItem) {
+  return {
+    sku: lineItem.sku,
+    productId: lineItem.product_id,
+    variantId: lineItem.variant_id,
+    quantity: lineItem.quantity,
+  };
+}
+
+export function getFirstShipmentDetectionDiagnostics(order: ShopifyOrder) {
+  return {
+    lineItems: order.line_items.map(summarizeLineItem),
+    pairChecks: PRODUCT_PAIRS.map((pair) => ({
+      pair: pair.id,
+      subscription: {
+        expected: pair.subscription,
+        sameSku: order.line_items
+          .filter((lineItem) => lineItem.sku === pair.subscription.sku)
+          .map(summarizeLineItem),
+      },
+      experience: {
+        expected: pair.experience,
+        sameSku: order.line_items
+          .filter((lineItem) => lineItem.sku === pair.experience.sku)
+          .map(summarizeLineItem),
+      },
+    })),
+  };
+}
+
 export function detectFirstShipmentAdjustment(
   order: ShopifyOrder,
 ): FirstShipmentAdjustment {

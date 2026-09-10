@@ -10,7 +10,10 @@ import {
   parseShopifyOrder,
 } from "@/lib/shopify/order";
 import { verifyShopifyWebhook } from "@/lib/shopify/verify-webhook";
-import { detectFirstShipmentAdjustment } from "@/lib/subscriptions/first-shipment-adjustment";
+import {
+  detectFirstShipmentAdjustment,
+  getFirstShipmentDetectionDiagnostics,
+} from "@/lib/subscriptions/first-shipment-adjustment";
 import { processFirstShipmentAdjustment } from "@/lib/subscriptions/process-first-shipment";
 
 export const runtime = "nodejs";
@@ -34,6 +37,10 @@ export async function POST(request: Request): Promise<Response> {
 
     const topic = request.headers.get("x-shopify-topic");
     if (topic !== SHOPIFY_TOPIC) {
+      logIntegrationEvent("invalid_shopify_topic", {
+        receivedTopic: topic,
+        webhookId,
+      });
       return Response.json(
         { ok: false, error: "invalid_topic" },
         { status: 400 },
@@ -48,6 +55,7 @@ export async function POST(request: Request): Promise<Response> {
       logIntegrationEvent("ignored_no_pair", {
         shopifyOrderId,
         webhookId,
+        ...getFirstShipmentDetectionDiagnostics(order),
       });
 
       return Response.json({
@@ -56,6 +64,18 @@ export async function POST(request: Request): Promise<Response> {
         reason: "no_matching_pair",
       });
     }
+
+    logIntegrationEvent("adjustment_detected", {
+      shopifyOrderId,
+      webhookId,
+      pair: adjustment.pair,
+      subscriptionSku: adjustment.subscriptionSku,
+      subscriptionQuantity: adjustment.subscriptionQuantity,
+      experienceSku: adjustment.experienceSku,
+      experienceQuantity: adjustment.experienceQuantity,
+      experienceReplacementSku: adjustment.experienceReplacementSku,
+      targetQuantity: adjustment.targetQuantity,
+    });
 
     const bigblueRequest = createBigblueClient({ apiKey: getBigblueApiKey() });
     const result = await processFirstShipmentAdjustment(
@@ -67,6 +87,11 @@ export async function POST(request: Request): Promise<Response> {
     return Response.json(result);
   } catch (error) {
     if (error instanceof InvalidShopifyOrderError) {
+      logIntegrationEvent("invalid_shopify_payload", {
+        reason: error.message,
+        shopifyOrderId,
+        webhookId,
+      });
       return Response.json(
         { ok: false, error: "invalid_shopify_payload" },
         { status: 400 },
@@ -87,6 +112,7 @@ export async function POST(request: Request): Promise<Response> {
     if (error instanceof BigblueApiError) {
       logIntegrationEvent("update_failed", {
         bigblueCode: error.code,
+        bigblueMessage: error.message,
         bigblueStatus: error.status,
         retryable: error.retryable,
         shopifyOrderId,

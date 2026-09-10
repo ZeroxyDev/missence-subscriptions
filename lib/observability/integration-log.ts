@@ -1,16 +1,26 @@
 type IntegrationEvent =
   | "already_adjusted"
+  | "adjustment_detected"
+  | "adjustment_planned"
   | "bigblue_not_ready"
   | "bigblue_order_found"
   | "ignored_no_pair"
+  | "invalid_shopify_payload"
   | "invalid_shopify_hmac"
+  | "invalid_shopify_topic"
   | "update_failed"
   | "updated";
 
-type LogContext = Record<
-  string,
-  boolean | number | string | null | undefined
->;
+type LogValue =
+  | boolean
+  | number
+  | string
+  | null
+  | undefined
+  | { readonly [key: string]: LogValue }
+  | readonly LogValue[];
+
+type LogContext = Record<string, LogValue>;
 
 export function logIntegrationEvent(
   event: IntegrationEvent,
@@ -26,7 +36,12 @@ export function logIntegrationEvent(
     return;
   }
 
-  if (event === "invalid_shopify_hmac" || event === "bigblue_not_ready") {
+  if (
+    event === "invalid_shopify_hmac" ||
+    event === "invalid_shopify_payload" ||
+    event === "invalid_shopify_topic" ||
+    event === "bigblue_not_ready"
+  ) {
     console.warn("bigblue_subscription_adjustment", payload);
     return;
   }

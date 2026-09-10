@@ -15,6 +15,12 @@ type ActionableAdjustment = Extract<
   { shouldAdjust: true }
 >;
 
+function summarizeBigblueLineItems(
+  lineItems: readonly { product: string; quantity: number }[],
+) {
+  return lineItems.map(({ product, quantity }) => ({ product, quantity }));
+}
+
 export type FirstShipmentResult =
   | {
       ok: true;
@@ -47,6 +53,14 @@ export async function processFirstShipmentAdjustment(
     shopifyOrderId: adjustment.shopifyOrderId,
     bigblueOrderId: bigblueOrder.id,
     pair: adjustment.pair,
+    status:
+      typeof bigblueOrder.status === "object" &&
+      bigblueOrder.status !== null &&
+      "code" in bigblueOrder.status &&
+      typeof bigblueOrder.status.code === "string"
+        ? bigblueOrder.status.code
+        : undefined,
+    lineItems: summarizeBigblueLineItems(bigblueOrder.line_items),
   });
 
   const plan = planBigblueLineItemAdjustment(
@@ -54,6 +68,18 @@ export async function processFirstShipmentAdjustment(
     adjustment,
     FULFILLMENT_SETTINGS,
   );
+
+  logIntegrationEvent("adjustment_planned", {
+    shopifyOrderId: adjustment.shopifyOrderId,
+    bigblueOrderId: bigblueOrder.id,
+    pair: adjustment.pair,
+    replacementEnabled: FULFILLMENT_SETTINGS.replaceExperienceSku,
+    previousQuantity: plan.previousQuantity,
+    targetQuantity: adjustment.targetQuantity,
+    alreadyAdjusted: plan.alreadyAdjusted,
+    before: summarizeBigblueLineItems(bigblueOrder.line_items),
+    after: summarizeBigblueLineItems(plan.lineItems),
+  });
 
   if (plan.alreadyAdjusted) {
     logIntegrationEvent("already_adjusted", {

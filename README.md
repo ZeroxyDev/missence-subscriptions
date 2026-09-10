@@ -186,12 +186,18 @@ ignored_no_pair
 invalid_shopify_hmac
 bigblue_not_ready
 bigblue_order_found
+adjustment_detected
+adjustment_planned
 already_adjusted
 updated
 update_failed
+invalid_shopify_topic
+invalid_shopify_payload
 ```
 
-Solo incluyen contexto operativo como IDs, pareja, SKU, cantidades y códigos de error. No registran credenciales ni direcciones de clientes.
+`ignored_no_pair` incluye un resumen de las líneas recibidas y, para cada pareja, los valores esperados frente a las líneas con el mismo SKU. Esto permite distinguir rápidamente un SKU ausente de un Product ID o Variant ID incorrecto. `adjustment_planned` registra las líneas y cantidades antes y después del plan, sin precios ni datos personales.
+
+Solo incluyen contexto operativo como IDs, pareja, SKU, cantidades, estados y códigos de error. No registran credenciales, nombres, correos, precios ni direcciones de clientes.
 
 ## Configuración en Shopify
 
