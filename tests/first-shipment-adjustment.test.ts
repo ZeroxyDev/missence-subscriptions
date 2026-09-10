@@ -7,7 +7,13 @@ import { detectFirstShipmentAdjustment } from "@/lib/subscriptions/first-shipmen
 type LineItemInput = Pick<
   ShopifyOrder["line_items"][number],
   "quantity" | "sku" | "variant_id"
->;
+> &
+  Partial<
+    Pick<
+      ShopifyOrder["line_items"][number],
+      "price" | "tax_lines" | "total_discount"
+    >
+  >;
 
 function createOrder(lineItems: LineItemInput[]): ShopifyOrder {
   return {
@@ -15,6 +21,9 @@ function createOrder(lineItems: LineItemInput[]): ShopifyOrder {
     created_at: "2026-09-09T10:00:00.000Z",
     line_items: lineItems.map((lineItem, index) => ({
       id: index + 1,
+      price: "10.00",
+      total_discount: "0.00",
+      tax_lines: [],
       ...lineItem,
     })),
   };
@@ -56,6 +65,7 @@ describe("detectFirstShipmentAdjustment", () => {
         assert.equal(result.targetQuantity, targetQuantity);
         assert.equal(result.subscriptionQuantity, quantity);
         assert.equal(result.experienceQuantity, 1);
+        assert.equal(result.experienceReplacementSku, "MISS-000000-0004");
       }
     });
   }
@@ -135,6 +145,30 @@ describe("detectFirstShipmentAdjustment", () => {
       assert.equal(result.experienceQuantity, 2);
       assert.equal(result.subscriptionQuantity, 3);
       assert.equal(result.targetQuantity, 1);
+    }
+  });
+
+  it("keeps the Shopify financial values for a missing Bigblue source line", () => {
+    const result = detectFirstShipmentAdjustment(
+      createOrder([
+        {
+          ...experience0004,
+          quantity: 2,
+          price: "12.50",
+          total_discount: "3.00",
+          tax_lines: [{ price: "5.00" }],
+        },
+        { ...subscription0002, quantity: 3 },
+      ]),
+    );
+
+    assert.equal(result.shouldAdjust, true);
+    if (result.shouldAdjust) {
+      assert.deepEqual(result.experiencePricing, {
+        unitPrice: "12.50",
+        unitTax: "2.50",
+        discount: "3.00",
+      });
     }
   });
 

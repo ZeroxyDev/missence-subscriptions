@@ -99,10 +99,10 @@ X-Shopify-Topic: orders/create
 
 ### Parejas configuradas
 
-| Pareja | Suscripción | Variant | Experiencia | Variant |
-| --- | --- | ---: | --- | ---: |
-| `MISS_0002_0004` | `MISS-000000-0002` | `10791019643207` | `MISS-000000-0004-UP` | `10987479859527` |
-| `MISS_0001_0003` | `MISS-000000-0001` | `10790886310215` | `MISS-000000-0003-UP` | `10987460002119` |
+| Pareja | Suscripción | Variant | Experiencia | Variant | Reemplazo | Variant reemplazo |
+| --- | --- | ---: | --- | ---: | --- | ---: |
+| `MISS_0002_0004` | `MISS-000000-0002` | `10791019643207` | `MISS-000000-0004-UP` | `10987479859527` | `MISS-000000-0004` | `10897754554695` |
+| `MISS_0001_0003` | `MISS-000000-0001` | `10790886310215` | `MISS-000000-0003-UP` | `10987460002119` | `MISS-000000-0003` | `10897753637191` |
 
 Se tienen que encontrar simultáneamente el SKU y el variant ID de ambos productos. La experiencia solo aparece en el checkout inicial o cuando el cliente vuelve a suscribirse; su presencia junto a la suscripción es el marcador del primer envío. Una renovación automática solo contiene la suscripción y se ignora.
 
@@ -118,6 +118,24 @@ targetQuantity = Math.max(
 Cada unidad de experiencia contiene una unidad del producto, por lo que resta una unidad de la línea de suscripción. La cantidad objetivo siempre se deriva del webhook de Shopify, nunca de `bigblueCurrentQuantity - experienceQuantity`. Por eso repetir el mismo evento converge al mismo estado.
 
 Si el objetivo es cero se elimina la línea logística; no se envía `quantity: 0`. Si Bigblue ya tiene la cantidad objetivo, o la línea ya está ausente cuando el objetivo es cero, no se llama a `UpdateOrder`.
+
+### Reemplazo de experiencias para fulfillment
+
+Cada experiencia define su reemplazo de forma explícita en `config/subscription-product-pairs.ts`. No se deduce a partir de `-UP` ni de ningún otro patrón: tanto el SKU como los variant ID de origen y destino pueden ser distintos para cada pareja.
+
+El comportamiento se activa o desactiva globalmente en `config/fulfillment-settings.ts`:
+
+```ts
+replaceExperienceSku: true
+```
+
+Cuando está activo, la copia logística de Bigblue utiliza siempre el SKU configurado en `experience.replacement`, exista o no el SKU original en Bigblue:
+
+- Si Bigblue ya contiene la experiencia original, se conserva su línea completa y solo se sustituyen `product` y la cantidad absoluta esperada.
+- Si Bigblue todavía no contiene esa línea, se crea el reemplazo con el precio unitario, impuestos y descuento recibidos en el webhook de Shopify.
+- Si el reemplazo ya existe con la cantidad correcta, no se vuelve a añadir. Los reintentos convergen a una única línea de reemplazo.
+
+Este cambio solo afecta al fulfillment en Bigblue. El pedido, el SKU, los precios, los impuestos y los descuentos originales permanecen intactos en Shopify.
 
 ### Sincronización y retry
 
@@ -186,9 +204,10 @@ Antes de producción:
 1. Confirmar que `SHOPIFY_WEBHOOK_SECRET` corresponde al client secret de la app que firma el webhook.
 2. Ejecutar un pedido combinado de prueba por cada pareja.
 3. Verificar que Shopify conserva todas sus líneas y cantidades.
-4. Verificar que Bigblue elimina o reduce únicamente la línea de suscripción.
-5. Reenviar el mismo webhook y confirmar `alreadyAdjusted`.
-6. Probar una renovación sin experiencia y confirmar `no_matching_pair`.
+4. Verificar que Bigblue elimina o reduce únicamente la línea de suscripción y utiliza el reemplazo configurado para la experiencia.
+5. Confirmar que precio, impuestos y descuento de la experiencia se conservan en la línea reemplazada.
+6. Reenviar el mismo webhook y confirmar `alreadyAdjusted` sin líneas duplicadas.
+7. Probar una renovación sin experiencia y confirmar `no_matching_pair`.
 
 ## Frontend
 
@@ -214,6 +233,7 @@ app/
   page.tsx
 components/operations/
 config/
+  fulfillment-settings.ts
   shopify.ts
   site.ts
   server-env.ts
@@ -236,7 +256,7 @@ pnpm missence check
 pnpm missence build
 ```
 
-La suite cubre detección de parejas, renovaciones, mismatch de variantes, cálculo absoluto, eliminación de líneas, idempotencia, HMAC, validación de payload Shopify, paginación Bigblue y sanitización de UpdateOrder.
+La suite cubre detección de parejas, renovaciones, mismatch de variantes, cálculo absoluto, eliminación de líneas, reemplazo explícito de experiencias, conservación de valores económicos, idempotencia, HMAC, validación de payload Shopify, paginación Bigblue y sanitización de UpdateOrder.
 
 ## Referencias
 

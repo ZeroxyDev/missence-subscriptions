@@ -1,3 +1,4 @@
+import { FULFILLMENT_SETTINGS } from "@/config/fulfillment-settings";
 import type { BigblueRequest } from "@/lib/bigblue/client";
 import {
   buildUpdateOrderPayload,
@@ -51,6 +52,7 @@ export async function processFirstShipmentAdjustment(
   const plan = planBigblueLineItemAdjustment(
     bigblueOrder.line_items,
     adjustment,
+    FULFILLMENT_SETTINGS,
   );
 
   if (plan.alreadyAdjusted) {
@@ -81,6 +83,8 @@ export async function processFirstShipmentAdjustment(
     subscriptionSku: adjustment.subscriptionSku,
     subscriptionQuantity: adjustment.subscriptionQuantity,
     experienceQuantity: adjustment.experienceQuantity,
+    experienceSkuReplacement: FULFILLMENT_SETTINGS.replaceExperienceSku,
+    experienceReplacementSku: adjustment.experienceReplacementSku,
     previousQuantity: plan.previousQuantity,
     targetQuantity: adjustment.targetQuantity,
   });

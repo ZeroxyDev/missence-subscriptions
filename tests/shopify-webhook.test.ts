@@ -35,6 +35,9 @@ describe("parseShopifyOrder", () => {
             variant_id: 10791019643207,
             sku: "MISS-000000-0002",
             quantity: 2,
+            price: "25.00",
+            total_discount: "2.00",
+            tax_lines: [{ price: "4.20" }],
           },
         ],
       }),
@@ -42,6 +45,9 @@ describe("parseShopifyOrder", () => {
 
     assert.equal(order.id, 123);
     assert.equal(order.line_items[0]?.quantity, 2);
+    assert.equal(order.line_items[0]?.price, "25.00");
+    assert.equal(order.line_items[0]?.total_discount, "2.00");
+    assert.deepEqual(order.line_items[0]?.tax_lines, [{ price: "4.20" }]);
   });
 
   it("rejects malformed payloads", () => {
@@ -57,4 +63,3 @@ describe("parseShopifyOrder", () => {
     );
   });
 });
-

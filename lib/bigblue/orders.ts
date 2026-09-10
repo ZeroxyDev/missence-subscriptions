@@ -1,3 +1,4 @@
+import type { FulfillmentSettings } from "@/config/fulfillment-settings";
 import type { BigblueRequest } from "@/lib/bigblue/client";
 import { BigblueApiError } from "@/lib/bigblue/client";
 import type { FirstShipmentAdjustment } from "@/lib/subscriptions/first-shipment-adjustment";
@@ -79,6 +80,11 @@ export type BigblueLineItemAdjustmentPlan =
       previousQuantity: number;
       lineItems: BigblueLineItem[];
     };
+
+type ActionableAdjustment = Extract<
+  FirstShipmentAdjustment,
+  { shouldAdjust: true }
+>;
 
 export class InvalidBigblueResponseError extends Error {
   constructor(message: string) {
@@ -278,11 +284,84 @@ export async function findBigblueOrderWithRetry(
   throw new BigblueOrderNotReadyError(shopifyOrderId);
 }
 
+function planExperienceSkuReplacement(
+  lineItems: readonly BigblueLineItem[],
+  adjustment: ActionableAdjustment,
+  enabled: boolean,
+): { alreadyReplaced: boolean; lineItems: BigblueLineItem[] } {
+  if (
+    !enabled ||
+    adjustment.experienceSku === adjustment.experienceReplacementSku
+  ) {
+    return { alreadyReplaced: true, lineItems: [...lineItems] };
+  }
+
+  const sourceItems = lineItems.filter(
+    (lineItem) => lineItem.product === adjustment.experienceSku,
+  );
+  const replacementItems = lineItems.filter(
+    (lineItem) => lineItem.product === adjustment.experienceReplacementSku,
+  );
+
+  if (
+    sourceItems.length === 0 &&
+    replacementItems.length === 1 &&
+    replacementItems[0].quantity === adjustment.experienceQuantity
+  ) {
+    return { alreadyReplaced: true, lineItems: [...lineItems] };
+  }
+
+  const template = sourceItems[0] ?? replacementItems[0];
+  const replacement: BigblueLineItem = template
+    ? {
+        ...template,
+        product: adjustment.experienceReplacementSku,
+        quantity: adjustment.experienceQuantity,
+      }
+    : {
+        product: adjustment.experienceReplacementSku,
+        quantity: adjustment.experienceQuantity,
+        unit_price: adjustment.experiencePricing.unitPrice,
+        unit_tax: adjustment.experiencePricing.unitTax,
+        discount: adjustment.experiencePricing.discount,
+      };
+  const result: BigblueLineItem[] = [];
+  let replacementInserted = false;
+
+  for (const lineItem of lineItems) {
+    const isExperience =
+      lineItem.product === adjustment.experienceSku ||
+      lineItem.product === adjustment.experienceReplacementSku;
+
+    if (!isExperience) {
+      result.push(lineItem);
+      continue;
+    }
+
+    if (!replacementInserted) {
+      result.push(replacement);
+      replacementInserted = true;
+    }
+  }
+
+  if (!replacementInserted) {
+    result.push(replacement);
+  }
+
+  return { alreadyReplaced: false, lineItems: result };
+}
+
 export function planBigblueLineItemAdjustment(
   lineItems: readonly BigblueLineItem[],
-  adjustment: Extract<FirstShipmentAdjustment, { shouldAdjust: true }>,
+  adjustment: ActionableAdjustment,
+  settings: FulfillmentSettings,
 ): BigblueLineItemAdjustmentPlan {
-  const matchingItems = lineItems.filter(
+  const experiencePlan = planExperienceSkuReplacement(
+    lineItems,
+    adjustment,
+    settings.replaceExperienceSku,
+  );
+  const matchingItems = experiencePlan.lineItems.filter(
     (lineItem) => lineItem.product === adjustment.subscriptionSku,
   );
   const previousQuantity = matchingItems.reduce(
@@ -290,11 +369,14 @@ export function planBigblueLineItemAdjustment(
     0,
   );
 
-  if (previousQuantity === adjustment.targetQuantity) {
+  if (
+    previousQuantity === adjustment.targetQuantity &&
+    experiencePlan.alreadyReplaced
+  ) {
     return {
       alreadyAdjusted: true,
       previousQuantity,
-      lineItems: [...lineItems],
+      lineItems: experiencePlan.lineItems,
     };
   }
 
@@ -302,7 +384,7 @@ export function planBigblueLineItemAdjustment(
     return {
       alreadyAdjusted: false,
       previousQuantity,
-      lineItems: lineItems.filter(
+      lineItems: experiencePlan.lineItems.filter(
         (lineItem) => lineItem.product !== adjustment.subscriptionSku,
       ),
     };
@@ -317,7 +399,7 @@ export function planBigblueLineItemAdjustment(
   return {
     alreadyAdjusted: false,
     previousQuantity,
-    lineItems: lineItems.map((lineItem) =>
+    lineItems: experiencePlan.lineItems.map((lineItem) =>
       lineItem.product === adjustment.subscriptionSku
         ? { ...lineItem, quantity: adjustment.targetQuantity }
         : lineItem,

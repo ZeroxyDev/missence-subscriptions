@@ -27,12 +27,18 @@ function checkDetectionRules(): void {
           sku: pair.subscription.sku,
           variant_id: pair.subscription.variantId,
           quantity: 3,
+          price: "20.00",
+          total_discount: "0.00",
+          tax_lines: [],
         },
         {
           id: 2,
           sku: pair.experience.sku,
           variant_id: pair.experience.variantId,
           quantity: 2,
+          price: "10.00",
+          total_discount: "0.00",
+          tax_lines: [],
         },
       ],
     };
