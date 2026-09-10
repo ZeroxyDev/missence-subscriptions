@@ -25,16 +25,16 @@ const subscription0002 = {
   variant_id: 10791019643207,
 };
 const experience0004 = {
-  sku: "MISS-000000-0004",
-  variant_id: 10897754554695,
+  sku: "MISS-000000-0004-UP",
+  variant_id: 10987479859527,
 };
 const subscription0001 = {
   sku: "MISS-000000-0001",
   variant_id: 10790886310215,
 };
 const experience0003 = {
-  sku: "MISS-000000-0003",
-  variant_id: 10897753637191,
+  sku: "MISS-000000-0003-UP",
+  variant_id: 10987460002119,
 };
 
 describe("detectFirstShipmentAdjustment", () => {

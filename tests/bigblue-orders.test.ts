@@ -14,7 +14,7 @@ const adjustment = {
   pair: "MISS_0002_0004",
   shopifyOrderId: "123456789",
   subscriptionSku: "MISS-000000-0002",
-  experienceSku: "MISS-000000-0004",
+  experienceSku: "MISS-000000-0004-UP",
   subscriptionQuantity: 2,
   experienceQuantity: 1,
   targetQuantity: 1,
@@ -24,7 +24,7 @@ describe("planBigblueLineItemAdjustment", () => {
   it("sets the absolute Shopify-derived target quantity", () => {
     const plan = planBigblueLineItemAdjustment(
       [
-        { product: "MISS-000000-0004", quantity: 1, unit_price: "10.00" },
+        { product: "MISS-000000-0004-UP", quantity: 1, unit_price: "10.00" },
         { product: "MISS-000000-0002", quantity: 6, unit_price: "20.00" },
       ],
       adjustment,
@@ -33,7 +33,7 @@ describe("planBigblueLineItemAdjustment", () => {
     assert.equal(plan.alreadyAdjusted, false);
     assert.equal(plan.previousQuantity, 6);
     assert.deepEqual(plan.lineItems, [
-      { product: "MISS-000000-0004", quantity: 1, unit_price: "10.00" },
+      { product: "MISS-000000-0004-UP", quantity: 1, unit_price: "10.00" },
       { product: "MISS-000000-0002", quantity: 1, unit_price: "20.00" },
     ]);
   });
@@ -55,7 +55,7 @@ describe("planBigblueLineItemAdjustment", () => {
     };
     const plan = planBigblueLineItemAdjustment(
       [
-        { product: "MISS-000000-0004", quantity: 1 },
+        { product: "MISS-000000-0004-UP", quantity: 1 },
         { product: "MISS-000000-0002", quantity: 1 },
       ],
       zeroAdjustment,
@@ -63,13 +63,13 @@ describe("planBigblueLineItemAdjustment", () => {
 
     assert.equal(plan.alreadyAdjusted, false);
     assert.deepEqual(plan.lineItems, [
-      { product: "MISS-000000-0004", quantity: 1 },
+      { product: "MISS-000000-0004-UP", quantity: 1 },
     ]);
   });
 
   it("treats an absent zero-target line as already adjusted", () => {
     const plan = planBigblueLineItemAdjustment(
-      [{ product: "MISS-000000-0004", quantity: 1 }],
+      [{ product: "MISS-000000-0004-UP", quantity: 1 }],
       { ...adjustment, subscriptionQuantity: 1, targetQuantity: 0 },
     );
 

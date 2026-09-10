@@ -101,8 +101,8 @@ X-Shopify-Topic: orders/create
 
 | Pareja | Suscripción | Variant | Experiencia | Variant |
 | --- | --- | ---: | --- | ---: |
-| `MISS_0002_0004` | `MISS-000000-0002` | `10791019643207` | `MISS-000000-0004` | `10897754554695` |
-| `MISS_0001_0003` | `MISS-000000-0001` | `10790886310215` | `MISS-000000-0003` | `10897753637191` |
+| `MISS_0002_0004` | `MISS-000000-0002` | `10791019643207` | `MISS-000000-0004-UP` | `10987479859527` |
+| `MISS_0001_0003` | `MISS-000000-0001` | `10790886310215` | `MISS-000000-0003-UP` | `10987460002119` |
 
 Se tienen que encontrar simultáneamente el SKU y el variant ID de ambos productos. La experiencia solo aparece en el checkout inicial o cuando el cliente vuelve a suscribirse; su presencia junto a la suscripción es el marcador del primer envío. Una renovación automática solo contiene la suscripción y se ignora.
 
