@@ -4,6 +4,7 @@ export type ShopifyTaxLine = {
 
 export type ShopifyOrderLineItem = {
   id: number;
+  product_id: number | null;
   variant_id: number | null;
   sku: string | null;
   quantity: number;
@@ -66,6 +67,7 @@ function parseLineItem(value: unknown, index: number): ShopifyOrderLineItem {
 
   const {
     id,
+    product_id: productId,
     variant_id: variantId,
     sku,
     quantity,
@@ -76,6 +78,12 @@ function parseLineItem(value: unknown, index: number): ShopifyOrderLineItem {
 
   if (!Number.isSafeInteger(id)) {
     throw new InvalidShopifyOrderError(`line_items[${index}].id is invalid`);
+  }
+
+  if (productId !== null && !Number.isSafeInteger(productId)) {
+    throw new InvalidShopifyOrderError(
+      `line_items[${index}].product_id is invalid`,
+    );
   }
 
   if (variantId !== null && !Number.isSafeInteger(variantId)) {
@@ -96,6 +104,7 @@ function parseLineItem(value: unknown, index: number): ShopifyOrderLineItem {
 
   return {
     id: Number(id),
+    product_id: productId === null ? null : Number(productId),
     variant_id: variantId === null ? null : Number(variantId),
     sku: sku === null ? null : String(sku),
     quantity: Number(quantity),

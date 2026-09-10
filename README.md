@@ -99,12 +99,16 @@ X-Shopify-Topic: orders/create
 
 ### Parejas configuradas
 
-| Pareja | Suscripción | Variant | Experiencia | Variant | Reemplazo | Variant reemplazo |
-| --- | --- | ---: | --- | ---: | --- | ---: |
-| `MISS_0002_0004` | `MISS-000000-0002` | `10791019643207` | `MISS-000000-0004-UP` | `10987479859527` | `MISS-000000-0004` | `10897754554695` |
-| `MISS_0001_0003` | `MISS-000000-0001` | `10790886310215` | `MISS-000000-0003-UP` | `10987460002119` | `MISS-000000-0003` | `10897753637191` |
+| Pareja | Rol | SKU | Product ID | Variant ID |
+| --- | --- | --- | ---: | ---: |
+| `MISS_0002_0004` | Suscripción | `MISS-000000-0002` | `10791019643207` | `53887845564743` |
+| `MISS_0002_0004` | Experiencia | `MISS-000000-0004-UP` | `10987479859527` | `54579708854599` |
+| `MISS_0002_0004` | Reemplazo | `MISS-000000-0004` | `10897754554695` | `54311286243655` |
+| `MISS_0001_0003` | Suscripción | `MISS-000000-0001` | `10790886310215` | `54328475517255` |
+| `MISS_0001_0003` | Experiencia | `MISS-000000-0003-UP` | `10987460002119` | `54579583025479` |
+| `MISS_0001_0003` | Reemplazo | `MISS-000000-0003` | `10897753637191` | `54311284736327` |
 
-Se tienen que encontrar simultáneamente el SKU y el variant ID de ambos productos. La experiencia solo aparece en el checkout inicial o cuando el cliente vuelve a suscribirse; su presencia junto a la suscripción es el marcador del primer envío. Una renovación automática solo contiene la suscripción y se ignora.
+Se tienen que encontrar simultáneamente el SKU y el Product ID de ambos productos. Cuando hay un Variant ID confirmado también se valida. `variantId: null` desactiva únicamente esa comprobación adicional; no relaja la coincidencia de SKU y producto. La experiencia solo aparece en el checkout inicial o cuando el cliente vuelve a suscribirse; su presencia junto a la suscripción es el marcador del primer envío. Una renovación automática solo contiene la suscripción y se ignora.
 
 ### Regla de cantidad
 
@@ -121,7 +125,7 @@ Si el objetivo es cero se elimina la línea logística; no se envía `quantity: 
 
 ### Reemplazo de experiencias para fulfillment
 
-Cada experiencia define su reemplazo de forma explícita en `config/subscription-product-pairs.ts`. No se deduce a partir de `-UP` ni de ningún otro patrón: tanto el SKU como los variant ID de origen y destino pueden ser distintos para cada pareja.
+Cada experiencia define su reemplazo de forma explícita en `config/subscription-product-pairs.ts`. No se deduce a partir de `-UP` ni de ningún otro patrón: el SKU, el Product ID y el Variant ID pueden ser distintos para cada pareja.
 
 El comportamiento se activa o desactiva globalmente en `config/fulfillment-settings.ts`:
 

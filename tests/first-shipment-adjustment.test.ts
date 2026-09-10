@@ -6,7 +6,7 @@ import { detectFirstShipmentAdjustment } from "@/lib/subscriptions/first-shipmen
 
 type LineItemInput = Pick<
   ShopifyOrder["line_items"][number],
-  "quantity" | "sku" | "variant_id"
+  "product_id" | "quantity" | "sku" | "variant_id"
 > &
   Partial<
     Pick<
@@ -31,19 +31,23 @@ function createOrder(lineItems: LineItemInput[]): ShopifyOrder {
 
 const subscription0002 = {
   sku: "MISS-000000-0002",
-  variant_id: 10791019643207,
+  product_id: 10791019643207,
+  variant_id: 53887845564743,
 };
 const experience0004 = {
   sku: "MISS-000000-0004-UP",
-  variant_id: 10987479859527,
+  product_id: 10987479859527,
+  variant_id: 54579708854599,
 };
 const subscription0001 = {
   sku: "MISS-000000-0001",
-  variant_id: 10790886310215,
+  product_id: 10790886310215,
+  variant_id: 54328475517255,
 };
 const experience0003 = {
   sku: "MISS-000000-0003-UP",
-  variant_id: 10987460002119,
+  product_id: 10987460002119,
+  variant_id: 54579583025479,
 };
 
 describe("detectFirstShipmentAdjustment", () => {
@@ -105,11 +109,22 @@ describe("detectFirstShipmentAdjustment", () => {
     });
   }
 
-  it("requires both the SKU and variant ID", () => {
+  it("requires the SKU, product ID and configured variant ID", () => {
     const result = detectFirstShipmentAdjustment(
       createOrder([
         { ...experience0004, quantity: 1 },
         { ...subscription0002, variant_id: 999, quantity: 2 },
+      ]),
+    );
+
+    assert.deepEqual(result, { shouldAdjust: false });
+  });
+
+  it("rejects a matching SKU with a different product ID", () => {
+    const result = detectFirstShipmentAdjustment(
+      createOrder([
+        { ...experience0003, quantity: 1 },
+        { ...subscription0001, product_id: 999, quantity: 2 },
       ]),
     );
 

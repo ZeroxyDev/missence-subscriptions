@@ -25,6 +25,7 @@ function checkDetectionRules(): void {
         {
           id: 1,
           sku: pair.subscription.sku,
+          product_id: pair.subscription.productId,
           variant_id: pair.subscription.variantId,
           quantity: 3,
           price: "20.00",
@@ -34,6 +35,7 @@ function checkDetectionRules(): void {
         {
           id: 2,
           sku: pair.experience.sku,
+          product_id: pair.experience.productId,
           variant_id: pair.experience.variantId,
           quantity: 2,
           price: "10.00",

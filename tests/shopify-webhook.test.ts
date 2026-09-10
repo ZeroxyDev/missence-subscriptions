@@ -32,7 +32,8 @@ describe("parseShopifyOrder", () => {
         line_items: [
           {
             id: 1,
-            variant_id: 10791019643207,
+            product_id: 10791019643207,
+            variant_id: 53887845564743,
             sku: "MISS-000000-0002",
             quantity: 2,
             price: "25.00",
@@ -44,6 +45,7 @@ describe("parseShopifyOrder", () => {
     );
 
     assert.equal(order.id, 123);
+    assert.equal(order.line_items[0]?.product_id, 10791019643207);
     assert.equal(order.line_items[0]?.quantity, 2);
     assert.equal(order.line_items[0]?.price, "25.00");
     assert.equal(order.line_items[0]?.total_discount, "2.00");

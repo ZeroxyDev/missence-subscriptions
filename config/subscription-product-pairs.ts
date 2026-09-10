@@ -1,6 +1,7 @@
 type ConfiguredProduct = {
   sku: string;
-  variantId: number;
+  productId: number;
+  variantId: number | null;
 };
 
 export type SubscriptionProductPair = {
@@ -16,14 +17,17 @@ export const PRODUCT_PAIRS = [
     id: "MISS_0002_0004",
     subscription: {
       sku: "MISS-000000-0002",
-      variantId: 10791019643207,
+      productId: 10791019643207,
+      variantId: 53887845564743,
     },
     experience: {
       sku: "MISS-000000-0004-UP",
-      variantId: 10987479859527,
+      productId: 10987479859527,
+      variantId: 54579708854599,
       replacement: {
         sku: "MISS-000000-0004",
-        variantId: 10897754554695,
+        productId: 10897754554695,
+        variantId: 54311286243655,
       },
     },
   },
@@ -31,14 +35,17 @@ export const PRODUCT_PAIRS = [
     id: "MISS_0001_0003",
     subscription: {
       sku: "MISS-000000-0001",
-      variantId: 10790886310215,
+      productId: 10790886310215,
+      variantId: 54328475517255,
     },
     experience: {
       sku: "MISS-000000-0003-UP",
-      variantId: 10987460002119,
+      productId: 10987460002119,
+      variantId: 54579583025479,
       replacement: {
         sku: "MISS-000000-0003",
-        variantId: 10897753637191,
+        productId: 10897753637191,
+        variantId: 54311284736327,
       },
     },
   },

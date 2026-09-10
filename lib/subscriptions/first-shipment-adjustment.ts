@@ -24,12 +24,17 @@ export type FirstShipmentAdjustment =
 
 function matchesProduct(
   lineItem: ShopifyOrderLineItem,
-  product: { readonly sku: string; readonly variantId: number },
+  product: {
+    readonly sku: string;
+    readonly productId: number;
+    readonly variantId: number | null;
+  },
 ): boolean {
   return (
     lineItem.quantity > 0 &&
     lineItem.sku === product.sku &&
-    lineItem.variant_id === product.variantId
+    lineItem.product_id === product.productId &&
+    (product.variantId === null || lineItem.variant_id === product.variantId)
   );
 }
 
