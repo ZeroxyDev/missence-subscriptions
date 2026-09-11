@@ -271,4 +271,25 @@ describe("findBigblueOrder", () => {
     assert.equal(order?.id, "BGBL01234567");
     assert.deepEqual(pageTokens, ["", "next"]);
   });
+
+  it("matches the Shopify order name used as Bigblue external_id", async () => {
+    const request = (async () => ({
+      orders: [
+        {
+          id: "MISSS1001026",
+          external_id: "#1026",
+          line_items: [],
+        },
+      ],
+    })) as BigblueRequest;
+
+    const order = await findBigblueOrder(
+      request,
+      ["#1026", "8146099044679"],
+      "2026-09-11T10:29:38.000Z",
+    );
+
+    assert.equal(order?.id, "MISSS1001026");
+    assert.equal(order?.external_id, "#1026");
+  });
 });

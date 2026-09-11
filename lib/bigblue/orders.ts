@@ -94,8 +94,8 @@ export class InvalidBigblueResponseError extends Error {
 }
 
 export class BigblueOrderNotReadyError extends Error {
-  constructor(readonly shopifyOrderId: string) {
-    super(`Bigblue order for Shopify order ${shopifyOrderId} is not ready`);
+  constructor(readonly externalIds: readonly string[]) {
+    super(`Bigblue order for references ${externalIds.join(", ")} is not ready`);
     this.name = "BigblueOrderNotReadyError";
   }
 }
@@ -204,10 +204,13 @@ export function formatBigblueDateTime(date: Date): string {
 
 export async function findBigblueOrder(
   request: BigblueRequest,
-  shopifyOrderId: string,
+  externalIds: string | readonly string[],
   createdAt: string,
 ): Promise<BigblueOrder | null> {
   const dateRange = getDateRange(createdAt);
+  const expectedExternalIds = new Set(
+    (typeof externalIds === "string" ? [externalIds] : externalIds).map(String),
+  );
   let pageToken = "";
 
   for (let page = 0; page < MAX_LIST_ORDER_PAGES; page += 1) {
@@ -221,7 +224,7 @@ export async function findBigblueOrder(
     for (const rawOrder of response.orders) {
       if (
         isRecord(rawOrder) &&
-        String(rawOrder.external_id) === shopifyOrderId
+        expectedExternalIds.has(String(rawOrder.external_id))
       ) {
         return parseBigblueOrder(rawOrder);
       }
@@ -249,7 +252,7 @@ const defaultSleep = (milliseconds: number) =>
 
 export async function findBigblueOrderWithRetry(
   request: BigblueRequest,
-  shopifyOrderId: string,
+  externalIds: string | readonly string[],
   createdAt: string,
   {
     delaysMs = [0, 1_000, 2_000, 4_000, 8_000],
@@ -265,7 +268,7 @@ export async function findBigblueOrderWithRetry(
     try {
       const order = await findBigblueOrder(
         request,
-        shopifyOrderId,
+        externalIds,
         createdAt,
       );
 
@@ -281,7 +284,9 @@ export async function findBigblueOrderWithRetry(
     }
   }
 
-  throw new BigblueOrderNotReadyError(shopifyOrderId);
+  throw new BigblueOrderNotReadyError(
+    typeof externalIds === "string" ? [externalIds] : externalIds,
+  );
 }
 
 function planExperienceSkuReplacement(

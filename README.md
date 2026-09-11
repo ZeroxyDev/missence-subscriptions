@@ -146,8 +146,12 @@ Este cambio solo afecta al fulfillment en Bigblue. El pedido, el SKU, los precio
 Bigblue puede importar el pedido después de que Shopify entregue el webhook. `ListOrders` busca por:
 
 ```ts
-String(bigblueOrder.external_id) === String(shopifyOrder.id)
+[shopifyOrder.name, String(shopifyOrder.id)].includes(
+  String(bigblueOrder.external_id),
+)
 ```
+
+Bigblue guarda actualmente el número visible de Shopify, por ejemplo `#1026`, como `external_id`. También se conserva el ID interno como alternativa para que la búsqueda funcione si cambia la configuración de la integración.
 
 Se usa una ventana de una hora a ambos lados de `created_at`, paginación con `next_page_token` y backoff `0, 1, 2, 4, 8` segundos. Cada petición tiene un timeout de dos segundos y `Retry-After` queda limitado a ocho segundos para mantener el procesamiento alrededor de los 25 segundos máximos.
 

@@ -100,7 +100,8 @@ export async function POST(request: Request): Promise<Response> {
 
     if (error instanceof BigblueOrderNotReadyError) {
       logIntegrationEvent("bigblue_not_ready", {
-        shopifyOrderId: error.shopifyOrderId,
+        shopifyOrderId,
+        searchedExternalIds: error.externalIds,
         webhookId,
       });
       return Response.json(

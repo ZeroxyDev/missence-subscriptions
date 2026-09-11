@@ -43,9 +43,12 @@ export async function processFirstShipmentAdjustment(
   order: ShopifyOrder,
   adjustment: ActionableAdjustment,
 ): Promise<FirstShipmentResult> {
+  const bigblueExternalIds = order.name
+    ? [order.name, adjustment.shopifyOrderId]
+    : [adjustment.shopifyOrderId];
   const bigblueOrder = await findBigblueOrderWithRetry(
     request,
-    adjustment.shopifyOrderId,
+    bigblueExternalIds,
     order.created_at,
   );
 
@@ -53,6 +56,7 @@ export async function processFirstShipmentAdjustment(
     shopifyOrderId: adjustment.shopifyOrderId,
     bigblueOrderId: bigblueOrder.id,
     pair: adjustment.pair,
+    matchedExternalId: String(bigblueOrder.external_id),
     status:
       typeof bigblueOrder.status === "object" &&
       bigblueOrder.status !== null &&
