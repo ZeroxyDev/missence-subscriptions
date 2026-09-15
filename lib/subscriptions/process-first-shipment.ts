@@ -16,9 +16,9 @@ type ActionableAdjustment = Extract<
 >;
 
 function summarizeBigblueLineItems(
-  lineItems: readonly { product: string; quantity: number }[],
+  lineItems: readonly import("@/lib/bigblue/orders").BigblueLineItem[],
 ) {
-  return lineItems.map(({ product, quantity }) => ({ product, quantity }));
+  return lineItems.map(({ product, quantity, unit_price, unit_tax, discount }) => ({ product, quantity, unit_price, unit_tax, discount }));
 }
 
 export type FirstShipmentResult =

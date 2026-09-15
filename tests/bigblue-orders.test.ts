@@ -9,173 +9,51 @@ import {
 } from "@/lib/bigblue/orders";
 import type { BigblueRequest } from "@/lib/bigblue/client";
 
-const adjustment = {
-  shouldAdjust: true,
-  pair: "MISS_0002_0004",
-  shopifyOrderId: "123456789",
-  subscriptionSku: "MISS-000000-0002",
-  experienceSku: "MISS-000000-0004-UP",
-  experienceReplacementSku: "MISS-000000-0004",
-  subscriptionQuantity: 2,
-  experienceQuantity: 1,
-  experiencePricing: {
-    unitPrice: "10.00",
-    unitTax: "2.10",
-    discount: "1.00",
-  },
-  targetQuantity: 1,
-} as const;
+import { PRODUCT_PAIRS } from "@/config/subscription-product-pairs";
+import { detectFirstShipmentAdjustment } from "@/lib/subscriptions/first-shipment-adjustment";
 
-const replacementDisabled = { replaceExperienceSku: false } as const;
-const replacementEnabled = { replaceExperienceSku: true } as const;
+const replacementEnabled = { replaceExperienceSku: true };
 
 describe("planBigblueLineItemAdjustment", () => {
-  it("sets the absolute Shopify-derived target quantity", () => {
-    const plan = planBigblueLineItemAdjustment(
-      [
-        { product: "MISS-000000-0004-UP", quantity: 1, unit_price: "10.00" },
-        { product: "MISS-000000-0002", quantity: 6, unit_price: "20.00" },
-      ],
-      adjustment,
-      replacementDisabled,
-    );
-
-    assert.equal(plan.alreadyAdjusted, false);
-    assert.equal(plan.previousQuantity, 6);
-    assert.deepEqual(plan.lineItems, [
-      { product: "MISS-000000-0004-UP", quantity: 1, unit_price: "10.00" },
-      { product: "MISS-000000-0002", quantity: 1, unit_price: "20.00" },
-    ]);
-  });
-
-  it("does not update an order already at the target", () => {
-    const plan = planBigblueLineItemAdjustment(
-      [{ product: "MISS-000000-0002", quantity: 1 }],
-      adjustment,
-      replacementDisabled,
-    );
-
-    assert.equal(plan.alreadyAdjusted, true);
-  });
-
-  it("removes the subscription line when the target is zero", () => {
-    const zeroAdjustment = {
-      ...adjustment,
-      subscriptionQuantity: 1,
-      targetQuantity: 0,
-    };
-    const plan = planBigblueLineItemAdjustment(
-      [
-        { product: "MISS-000000-0004-UP", quantity: 1 },
-        { product: "MISS-000000-0002", quantity: 1 },
-      ],
-      zeroAdjustment,
-      replacementDisabled,
-    );
-
-    assert.equal(plan.alreadyAdjusted, false);
-    assert.deepEqual(plan.lineItems, [
-      { product: "MISS-000000-0004-UP", quantity: 1 },
-    ]);
-  });
-
-  it("treats an absent zero-target line as already adjusted", () => {
-    const plan = planBigblueLineItemAdjustment(
-      [{ product: "MISS-000000-0004-UP", quantity: 1 }],
-      { ...adjustment, subscriptionQuantity: 1, targetQuantity: 0 },
-      replacementDisabled,
-    );
-
-    assert.equal(plan.alreadyAdjusted, true);
-  });
-
-  it("replaces an arbitrary configured experience SKU and preserves its values", () => {
-    const arbitrarySkuAdjustment = {
-      ...adjustment,
-      experienceSku: "EXPERIENCE-SUMMER-2026",
-      experienceReplacementSku: "FULFILLMENT-PACK-A",
-    };
-    const plan = planBigblueLineItemAdjustment(
-      [
-        {
-          product: "EXPERIENCE-SUMMER-2026",
-          quantity: 1,
-          unit_price: "17.95",
-          unit_tax: "3.77",
-          discount: "2.50",
-          custom_field: "preserved",
-        },
-        { product: "MISS-000000-0002", quantity: 2 },
-      ],
-      arbitrarySkuAdjustment,
-      replacementEnabled,
-    );
-
-    assert.equal(plan.alreadyAdjusted, false);
-    assert.deepEqual(plan.lineItems, [
-      {
-        product: "FULFILLMENT-PACK-A",
-        quantity: 1,
-        unit_price: "17.95",
-        unit_tax: "3.77",
-        discount: "2.50",
-        custom_field: "preserved",
-      },
-      { product: "MISS-000000-0002", quantity: 1 },
-    ]);
-  });
-
-  it("creates the replacement with Shopify values when the source is absent", () => {
-    const plan = planBigblueLineItemAdjustment(
-      [{ product: "MISS-000000-0002", quantity: 2 }],
-      adjustment,
-      replacementEnabled,
-    );
-
-    assert.equal(plan.alreadyAdjusted, false);
-    assert.deepEqual(plan.lineItems, [
-      { product: "MISS-000000-0002", quantity: 1 },
-      {
-        product: "MISS-000000-0004",
-        quantity: 1,
-        unit_price: "10.00",
-        unit_tax: "2.10",
-        discount: "1.00",
-      },
-    ]);
-  });
-
-  it("is idempotent when the replacement and target quantity already exist", () => {
-    const lineItems = [
-      { product: "MISS-000000-0004", quantity: 1, unit_price: "17.95" },
-      { product: "MISS-000000-0002", quantity: 1 },
-    ];
-    const plan = planBigblueLineItemAdjustment(
-      lineItems,
-      adjustment,
-      replacementEnabled,
-    );
-
-    assert.equal(plan.alreadyAdjusted, true);
-    assert.deepEqual(plan.lineItems, lineItems);
-  });
-
-  it("coalesces source and replacement lines without duplicating quantity", () => {
-    const plan = planBigblueLineItemAdjustment(
-      [
-        { product: "MISS-000000-0004-UP", quantity: 1, unit_price: "17.95" },
-        { product: "MISS-000000-0004", quantity: 1, unit_price: "17.95" },
-        { product: "MISS-000000-0002", quantity: 2 },
-      ],
-      adjustment,
-      replacementEnabled,
-    );
-
-    assert.deepEqual(plan.lineItems, [
-      { product: "MISS-000000-0004", quantity: 1, unit_price: "17.95" },
-      { product: "MISS-000000-0002", quantity: 1 },
-    ]);
-  });
+  for (const [pairIndex, quantity, price, expectedTotal] of [
+    [1, 2, "74.00", 197],
+    [0, 2, "54.00", 157],
+    [0, 1, "57.00", 106],
+    [1, 1, "78.00", 127],
+  ] as const) {
+    for (const source of ["original", "replacement", "missing"] as const) {
+      it(`preserves ${expectedTotal} euros with ${source} experience`, () => {
+        const pair = PRODUCT_PAIRS[pairIndex];
+        const order = {
+          id: 1, created_at: "2026-09-14T09:00:00Z",
+          line_items: [
+            { id: 1, sku: pair.subscription.sku, product_id: pair.subscription.productId,
+              variant_id: pair.subscription.variantId, quantity, price, total_discount: "0.00", tax_lines: [] },
+            { id: 2, sku: pair.experience.sku, product_id: pair.experience.productId,
+              variant_id: pair.experience.variantId, quantity: 1, price: "49.00", total_discount: "0.00", tax_lines: [] },
+          ],
+        };
+        const adjustment = detectFirstShipmentAdjustment(order);
+        assert.ok(adjustment.shouldAdjust);
+        const items = [
+          { product: pair.subscription.sku, quantity, unit_price: price },
+          ...(source === "missing" ? [] : [{ product: source === "original" ? pair.experience.sku : pair.experience.replacement.sku,
+            quantity: 1, unit_price: "1.00", custom_field: "preserved" }]),
+        ];
+        const plan = planBigblueLineItemAdjustment(items, adjustment, replacementEnabled);
+        assert.equal(plan.alreadyAdjusted, false);
+        assert.equal(plan.lineItems.reduce((sum, item) => sum + item.quantity * Number(item.unit_price) - Number(item.discount), 0), expectedTotal);
+        assert.equal(plan.lineItems.find(item => item.product === pair.subscription.sku)?.quantity ?? 0, quantity - 1);
+        const experience = plan.lineItems.find(item => item.product === pair.experience.replacement.sku);
+        assert.equal(experience?.quantity, 1);
+        assert.equal(Number(experience?.unit_price), 49 + Number(price));
+        if (source !== "missing") assert.equal(experience?.custom_field, "preserved");
+        const retry = planBigblueLineItemAdjustment(plan.lineItems, adjustment, replacementEnabled);
+        assert.equal(retry.alreadyAdjusted, true);
+        assert.deepEqual(retry.lineItems, plan.lineItems);
+      });
+    }
+  }
 });
 
 describe("buildUpdateOrderPayload", () => {

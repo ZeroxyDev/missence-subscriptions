@@ -16,6 +16,7 @@ export type ShopifyOrderLineItem = {
 export type ShopifyOrder = {
   id: number;
   name?: string;
+  taxes_included?: boolean;
   created_at: string;
   line_items: ShopifyOrderLineItem[];
 };
@@ -149,7 +150,12 @@ export function parseShopifyOrder(rawBody: string): ShopifyOrder {
     throw new InvalidShopifyOrderError("Order name is invalid");
   }
 
+  if (value.taxes_included !== undefined && typeof value.taxes_included !== "boolean") {
+    throw new InvalidShopifyOrderError("Order taxes_included is invalid");
+  }
+
   return {
+    ...(value.taxes_included === undefined ? {} : { taxes_included: value.taxes_included }),
     id: Number(value.id),
     ...(value.name === undefined ? {} : { name: value.name }),
     created_at: value.created_at,

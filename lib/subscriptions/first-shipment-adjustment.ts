@@ -1,6 +1,12 @@
 import { PRODUCT_PAIRS } from "@/config/subscription-product-pairs";
 import type { ShopifyOrder, ShopifyOrderLineItem } from "@/lib/shopify/order";
 
+type LinePricing = {
+  unitPrice: string;
+  unitTax: string;
+  discount: string;
+};
+
 export type FirstShipmentAdjustment =
   | {
       shouldAdjust: true;
@@ -11,11 +17,8 @@ export type FirstShipmentAdjustment =
       experienceReplacementSku: string;
       subscriptionQuantity: number;
       experienceQuantity: number;
-      experiencePricing: {
-        unitPrice: string;
-        unitTax: string;
-        discount: string;
-      };
+      experiencePricing: LinePricing;
+      subscriptionPricing: LinePricing;
       targetQuantity: number;
     }
   | {
@@ -40,6 +43,31 @@ function matchesProduct(
 
 function formatMoney(value: number): string {
   return value.toFixed(2);
+}
+
+// Work in cents and put any unit-price rounding remainder into the line discount.
+function getTotals(items: ShopifyOrderLineItem[], taxesIncluded: boolean) {
+  return items.reduce((total, item) => {
+    const tax = item.tax_lines.reduce(
+      (sum, line) => sum + Math.round(Number(line.price) * 100), 0,
+    );
+    return {
+      price: total.price + Math.round(Number(item.price) * 100) * item.quantity +
+        (taxesIncluded ? 0 : tax),
+      tax: total.tax + tax,
+      discount: total.discount + Math.round(Number(item.total_discount) * 100),
+    };
+  }, { price: 0, tax: 0, discount: 0 });
+}
+
+function pricing(totals: { price: number; tax: number; discount: number }, quantity: number): LinePricing {
+  if (quantity === 0) return { unitPrice: "0.00", unitTax: "0.00", discount: "0.00" };
+  const unitPrice = Math.ceil(totals.price / quantity);
+  return {
+    unitPrice: formatMoney(unitPrice / 100),
+    unitTax: formatMoney(Math.round(totals.tax / quantity) / 100),
+    discount: formatMoney((totals.discount + unitPrice * quantity - totals.price) / 100),
+  };
 }
 
 function summarizeLineItem(lineItem: ShopifyOrderLineItem) {
@@ -76,8 +104,8 @@ export function detectFirstShipmentAdjustment(
   order: ShopifyOrder,
 ): FirstShipmentAdjustment {
   for (const pair of PRODUCT_PAIRS) {
-    const subscriptionQuantity = order.line_items
-      .filter((lineItem) => matchesProduct(lineItem, pair.subscription))
+    const subscriptionItems = order.line_items.filter((lineItem) => matchesProduct(lineItem, pair.subscription));
+    const subscriptionQuantity = subscriptionItems
       .reduce((total, lineItem) => total + lineItem.quantity, 0);
 
     const experienceItems = order.line_items.filter((lineItem) =>
@@ -95,6 +123,19 @@ export function detectFirstShipmentAdjustment(
       experienceQuantity > 0 &&
       experienceItem
     ) {
+      const targetQuantity = Math.max(subscriptionQuantity - experienceQuantity, 0);
+      const subscriptionTotals = getTotals(subscriptionItems, order.taxes_included !== false);
+      const experienceTotals = getTotals(experienceItems, order.taxes_included !== false);
+      const remaining = {
+        price: Math.round(subscriptionTotals.price * targetQuantity / subscriptionQuantity),
+        tax: Math.round(subscriptionTotals.tax * targetQuantity / subscriptionQuantity),
+        discount: Math.round(subscriptionTotals.discount * targetQuantity / subscriptionQuantity),
+      };
+      const combined = {
+        price: experienceTotals.price + subscriptionTotals.price - remaining.price,
+        tax: experienceTotals.tax + subscriptionTotals.tax - remaining.tax,
+        discount: experienceTotals.discount + subscriptionTotals.discount - remaining.discount,
+      };
       return {
         shouldAdjust: true,
         pair: pair.id,
@@ -104,30 +145,9 @@ export function detectFirstShipmentAdjustment(
         experienceReplacementSku: pair.experience.replacement.sku,
         subscriptionQuantity,
         experienceQuantity,
-        experiencePricing: {
-          unitPrice: experienceItem.price,
-          unitTax: formatMoney(
-            experienceItems.reduce(
-              (total, lineItem) =>
-                total +
-                lineItem.tax_lines.reduce(
-                  (lineTax, taxLine) => lineTax + Number(taxLine.price),
-                  0,
-                ),
-              0,
-            ) / experienceQuantity,
-          ),
-          discount: formatMoney(
-            experienceItems.reduce(
-              (total, lineItem) => total + Number(lineItem.total_discount),
-              0,
-            ),
-          ),
-        },
-        targetQuantity: Math.max(
-          subscriptionQuantity - experienceQuantity,
-          0,
-        ),
+        experiencePricing: pricing(combined, experienceQuantity),
+        subscriptionPricing: pricing(remaining, targetQuantity),
+        targetQuantity,
       };
     }
   }

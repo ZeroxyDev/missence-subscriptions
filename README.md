@@ -135,9 +135,10 @@ replaceExperienceSku: true
 
 Cuando está activo, la copia logística de Bigblue utiliza siempre el SKU configurado en `experience.replacement`, exista o no el SKU original en Bigblue:
 
-- Si Bigblue ya contiene la experiencia original, se conserva su línea completa y solo se sustituyen `product` y la cantidad absoluta esperada.
-- Si Bigblue todavía no contiene esa línea, se crea el reemplazo con el precio unitario, impuestos y descuento recibidos en el webhook de Shopify.
-- Si el reemplazo ya existe con la cantidad correcta, no se vuelve a añadir. Los reintentos convergen a una única línea de reemplazo.
+- La experiencia recibe su importe de Shopify más el importe de las unidades de suscripción incluidas dentro de ella. Así, retirar unidades logísticas no reduce el total económico.
+- Los precios, impuestos y descuentos de ambas líneas se calculan desde el webhook, incluso si Bigblue ya tiene un reemplazo con un precio distinto (por ejemplo, 1 €).
+- Los reintentos comparan cantidades e importes y no acumulan el valor transferido.
+- Los logs de planificación incluyen precios, impuestos y descuentos para comprobar el resultado.
 
 Este cambio solo afecta al fulfillment en Bigblue. El pedido, el SKU, los precios, los impuestos y los descuentos originales permanecen intactos en Shopify.
 

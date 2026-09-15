@@ -289,17 +289,24 @@ export async function findBigblueOrderWithRetry(
   );
 }
 
+function financialFields(pricing: ActionableAdjustment["experiencePricing"]) {
+  return { unit_price: pricing.unitPrice, unit_tax: pricing.unitTax, discount: pricing.discount };
+}
+
+function matchesPricing(item: BigblueLineItem, pricing: ActionableAdjustment["experiencePricing"]) {
+  return Number(item.unit_price) === Number(pricing.unitPrice) &&
+    Number(item.unit_tax ?? 0) === Number(pricing.unitTax) &&
+    Number(item.discount ?? 0) === Number(pricing.discount);
+}
+
 function planExperienceSkuReplacement(
   lineItems: readonly BigblueLineItem[],
   adjustment: ActionableAdjustment,
   enabled: boolean,
 ): { alreadyReplaced: boolean; lineItems: BigblueLineItem[] } {
-  if (
-    !enabled ||
-    adjustment.experienceSku === adjustment.experienceReplacementSku
-  ) {
-    return { alreadyReplaced: true, lineItems: [...lineItems] };
-  }
+  const experienceProduct = enabled
+    ? adjustment.experienceReplacementSku
+    : adjustment.experienceSku;
 
   const sourceItems = lineItems.filter(
     (lineItem) => lineItem.product === adjustment.experienceSku,
@@ -311,25 +318,20 @@ function planExperienceSkuReplacement(
   if (
     sourceItems.length === 0 &&
     replacementItems.length === 1 &&
-    replacementItems[0].quantity === adjustment.experienceQuantity
+    replacementItems[0].quantity === adjustment.experienceQuantity &&
+    replacementItems[0].product === experienceProduct &&
+    matchesPricing(replacementItems[0], adjustment.experiencePricing)
   ) {
     return { alreadyReplaced: true, lineItems: [...lineItems] };
   }
 
   const template = sourceItems[0] ?? replacementItems[0];
-  const replacement: BigblueLineItem = template
-    ? {
-        ...template,
-        product: adjustment.experienceReplacementSku,
-        quantity: adjustment.experienceQuantity,
-      }
-    : {
-        product: adjustment.experienceReplacementSku,
-        quantity: adjustment.experienceQuantity,
-        unit_price: adjustment.experiencePricing.unitPrice,
-        unit_tax: adjustment.experiencePricing.unitTax,
-        discount: adjustment.experiencePricing.discount,
-      };
+  const replacement: BigblueLineItem = {
+    ...template,
+    product: experienceProduct,
+    quantity: adjustment.experienceQuantity,
+    ...financialFields(adjustment.experiencePricing),
+  };
   const result: BigblueLineItem[] = [];
   let replacementInserted = false;
 
@@ -376,7 +378,8 @@ export function planBigblueLineItemAdjustment(
 
   if (
     previousQuantity === adjustment.targetQuantity &&
-    experiencePlan.alreadyReplaced
+    experiencePlan.alreadyReplaced &&
+    matchingItems.every((item) => matchesPricing(item, adjustment.subscriptionPricing))
   ) {
     return {
       alreadyAdjusted: true,
@@ -406,7 +409,7 @@ export function planBigblueLineItemAdjustment(
     previousQuantity,
     lineItems: experiencePlan.lineItems.map((lineItem) =>
       lineItem.product === adjustment.subscriptionSku
-        ? { ...lineItem, quantity: adjustment.targetQuantity }
+        ? { ...lineItem, quantity: adjustment.targetQuantity, ...financialFields(adjustment.subscriptionPricing) }
         : lineItem,
     ),
   };

@@ -180,11 +180,33 @@ describe("detectFirstShipmentAdjustment", () => {
     assert.equal(result.shouldAdjust, true);
     if (result.shouldAdjust) {
       assert.deepEqual(result.experiencePricing, {
-        unitPrice: "12.50",
+        unitPrice: "22.50",
         unitTax: "2.50",
         discount: "3.00",
       });
     }
+  });
+
+  it("transfers proportional discounts and taxes with the included doypack", () => {
+    const result = detectFirstShipmentAdjustment(createOrder([
+      { ...subscription0001, quantity: 2, price: "74.00", total_discount: "8.00", tax_lines: [{ price: "20.00" }] },
+      { ...experience0003, quantity: 1, price: "49.00", total_discount: "3.00", tax_lines: [{ price: "7.00" }] },
+    ]));
+    assert.ok(result.shouldAdjust);
+    assert.deepEqual(result.subscriptionPricing, { unitPrice: "74.00", unitTax: "10.00", discount: "4.00" });
+    assert.deepEqual(result.experiencePricing, { unitPrice: "123.00", unitTax: "17.00", discount: "7.00" });
+  });
+
+  it("converts tax-exclusive Shopify prices to gross Bigblue prices", () => {
+    const result = detectFirstShipmentAdjustment({
+      ...createOrder([
+        { ...subscription0001, quantity: 1, price: "100.00", tax_lines: [{ price: "21.00" }] },
+        { ...experience0003, quantity: 1, price: "10.00", tax_lines: [{ price: "2.10" }] },
+      ]),
+      taxes_included: false,
+    });
+    assert.ok(result.shouldAdjust);
+    assert.deepEqual(result.experiencePricing, { unitPrice: "133.10", unitTax: "23.10", discount: "0.00" });
   });
 
   it("never produces a negative target quantity", () => {
