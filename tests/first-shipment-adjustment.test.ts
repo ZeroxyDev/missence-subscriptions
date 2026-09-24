@@ -180,7 +180,7 @@ describe("detectFirstShipmentAdjustment", () => {
     assert.equal(result.shouldAdjust, true);
     if (result.shouldAdjust) {
       assert.deepEqual(result.experiencePricing, {
-        unitPrice: "22.50",
+        unitPrice: "20.00",
         unitTax: "2.50",
         discount: "3.00",
       });
@@ -193,11 +193,11 @@ describe("detectFirstShipmentAdjustment", () => {
       { ...experience0003, quantity: 1, price: "49.00", total_discount: "3.00", tax_lines: [{ price: "7.00" }] },
     ]));
     assert.ok(result.shouldAdjust);
-    assert.deepEqual(result.subscriptionPricing, { unitPrice: "74.00", unitTax: "10.00", discount: "4.00" });
-    assert.deepEqual(result.experiencePricing, { unitPrice: "123.00", unitTax: "17.00", discount: "7.00" });
+    assert.deepEqual(result.subscriptionPricing, { unitPrice: "64.00", unitTax: "10.00", discount: "4.00" });
+    assert.deepEqual(result.experiencePricing, { unitPrice: "106.00", unitTax: "17.00", discount: "7.00" });
   });
 
-  it("converts tax-exclusive Shopify prices to gross Bigblue prices", () => {
+  it("keeps tax-exclusive Shopify prices net for Bigblue", () => {
     const result = detectFirstShipmentAdjustment({
       ...createOrder([
         { ...subscription0001, quantity: 1, price: "100.00", tax_lines: [{ price: "21.00" }] },
@@ -206,7 +206,7 @@ describe("detectFirstShipmentAdjustment", () => {
       taxes_included: false,
     });
     assert.ok(result.shouldAdjust);
-    assert.deepEqual(result.experiencePricing, { unitPrice: "133.10", unitTax: "23.10", discount: "0.00" });
+    assert.deepEqual(result.experiencePricing, { unitPrice: "110.00", unitTax: "23.10", discount: "0.00" });
   });
 
   it("never produces a negative target quantity", () => {

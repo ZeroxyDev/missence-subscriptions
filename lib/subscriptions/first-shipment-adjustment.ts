@@ -51,9 +51,9 @@ function getTotals(items: ShopifyOrderLineItem[], taxesIncluded: boolean) {
     const tax = item.tax_lines.reduce(
       (sum, line) => sum + Math.round(Number(line.price) * 100), 0,
     );
+    const price = Math.round(Number(item.price) * 100) * item.quantity;
     return {
-      price: total.price + Math.round(Number(item.price) * 100) * item.quantity +
-        (taxesIncluded ? 0 : tax),
+      price: total.price + price - (taxesIncluded ? tax : 0),
       tax: total.tax + tax,
       discount: total.discount + Math.round(Number(item.total_discount) * 100),
     };
@@ -63,10 +63,16 @@ function getTotals(items: ShopifyOrderLineItem[], taxesIncluded: boolean) {
 function pricing(totals: { price: number; tax: number; discount: number }, quantity: number): LinePricing {
   if (quantity === 0) return { unitPrice: "0.00", unitTax: "0.00", discount: "0.00" };
   const unitPrice = Math.ceil(totals.price / quantity);
+  const unitTax = Math.ceil(totals.tax / quantity);
   return {
     unitPrice: formatMoney(unitPrice / 100),
-    unitTax: formatMoney(Math.round(totals.tax / quantity) / 100),
-    discount: formatMoney((totals.discount + unitPrice * quantity - totals.price) / 100),
+    unitTax: formatMoney(unitTax / 100),
+    discount: formatMoney(
+      (totals.discount +
+        unitPrice * quantity - totals.price +
+        unitTax * quantity - totals.tax) /
+        100,
+    ),
   };
 }
 
