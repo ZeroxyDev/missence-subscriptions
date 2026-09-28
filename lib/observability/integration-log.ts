@@ -9,6 +9,8 @@ type IntegrationEvent =
   | "invalid_shopify_hmac"
   | "invalid_shopify_topic"
   | "update_failed"
+  | "update_not_persisted"
+  | "update_verified"
   | "updated";
 
 type LogValue =
@@ -40,7 +42,8 @@ export function logIntegrationEvent(
     event === "invalid_shopify_hmac" ||
     event === "invalid_shopify_payload" ||
     event === "invalid_shopify_topic" ||
-    event === "bigblue_not_ready"
+    event === "bigblue_not_ready" ||
+    event === "update_not_persisted"
   ) {
     console.warn("bigblue_subscription_adjustment", payload);
     return;

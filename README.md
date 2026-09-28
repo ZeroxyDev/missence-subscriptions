@@ -154,9 +154,11 @@ Bigblue puede importar el pedido después de que Shopify entregue el webhook. `L
 
 Bigblue guarda actualmente el número visible de Shopify, por ejemplo `#1026`, como `external_id`. También se conserva el ID interno como alternativa para que la búsqueda funcione si cambia la configuración de la integración.
 
-Se usa una ventana de una hora a ambos lados de `created_at`, paginación con `next_page_token` y backoff `0, 1, 2, 4, 8` segundos. Cada petición tiene un timeout de dos segundos y `Retry-After` queda limitado a ocho segundos para mantener el procesamiento alrededor de los 25 segundos máximos.
+Se usa una ventana de una hora a ambos lados de `created_at` y paginación con `next_page_token`. El webhook hace una búsqueda inmediata: si Bigblue todavía no muestra el pedido, devuelve `503` para que Shopify vuelva a entregar el evento. Shopify exige responder en cinco segundos; por eso las llamadas a Bigblue comparten un plazo de cuatro segundos. Shopify limita los reintentos; si se agotan, hace falta una recuperación manual.
 
-Si el pedido todavía no aparece se devuelve `503`, permitiendo el reintento de Shopify. Para más volumen, el siguiente paso arquitectónico es sustituir el retry dentro del request por una cola durable y responder `2xx` inmediatamente después de encolar.
+Después de `UpdateOrder`, el webhook relee el pedido sin espera y verifica cantidades, SKUs, precios y el ajuste fiscal aplicado. Si la actualización todavía no aparece en Bigblue, devuelve `503`. Esta comprobación confirma el estado inmediato; una sincronización posterior desde Shopify puede modificarlo otra vez. Para garantizar la persistencia a largo plazo hace falta una cola durable y una reconciliación posterior de pedidos pendientes.
+
+El residuo de `additional_tax` de un céntimo solo se limpia cuando la suma de las líneas finales y otros cargos de Bigblue, sin ese residuo, coincide exactamente con `total_price` de Shopify. Si el webhook no proporciona el total o hay otros cargos que no se pueden conciliar, se conserva el valor original.
 
 ### Payload de UpdateOrder
 
@@ -194,15 +196,19 @@ bigblue_order_found
 adjustment_detected
 adjustment_planned
 already_adjusted
+update_verified
+update_not_persisted
 updated
 update_failed
 invalid_shopify_topic
 invalid_shopify_payload
 ```
 
-`ignored_no_pair` incluye un resumen de las líneas recibidas y, para cada pareja, los valores esperados frente a las líneas con el mismo SKU. Esto permite distinguir rápidamente un SKU ausente de un Product ID o Variant ID incorrecto. `adjustment_planned` registra las líneas y cantidades antes y después del plan, sin precios ni datos personales.
+`ignored_no_pair` incluye un resumen de las líneas recibidas y, para cada pareja, los valores esperados frente a las líneas con el mismo SKU. Esto permite distinguir rápidamente un SKU ausente de un Product ID o Variant ID incorrecto. `adjustment_planned` registra las líneas, cantidades e importes antes y después del plan, sin datos personales.
 
-Solo incluyen contexto operativo como IDs, pareja, SKU, cantidades, estados y códigos de error. No registran credenciales, nombres, correos, precios ni direcciones de clientes.
+`update_verified` confirma el estado releído inmediatamente desde Bigblue. `update_not_persisted` indica que el estado leído todavía no coincide con el ajuste y que la petición terminó con `503` para provocar un reintento.
+
+Solo incluyen contexto operativo como IDs, pareja, SKU, cantidades, importes, estados y códigos de error. No registran credenciales, nombres, correos ni direcciones de clientes.
 
 ## Configuración en Shopify
 

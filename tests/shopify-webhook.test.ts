@@ -28,6 +28,7 @@ describe("parseShopifyOrder", () => {
       JSON.stringify({
         id: 123,
         name: "#1001",
+        total_price: "48.00",
         created_at: "2026-09-09T10:00:00Z",
         line_items: [
           {
@@ -45,6 +46,7 @@ describe("parseShopifyOrder", () => {
     );
 
     assert.equal(order.id, 123);
+    assert.equal(order.total_price, "48.00");
     assert.equal(order.line_items[0]?.product_id, 10791019643207);
     assert.equal(order.line_items[0]?.quantity, 2);
     assert.equal(order.line_items[0]?.price, "25.00");

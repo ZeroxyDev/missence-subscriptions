@@ -20,8 +20,10 @@ export const runtime = "nodejs";
 export const maxDuration = 30;
 
 const SHOPIFY_TOPIC = "orders/create";
+const WEBHOOK_PROCESSING_BUDGET_MS = 4_000;
 
 export async function POST(request: Request): Promise<Response> {
+  const deadlineAtMs = Date.now() + WEBHOOK_PROCESSING_BUDGET_MS;
   const rawBody = await request.text();
   const webhookId = request.headers.get("x-shopify-webhook-id") ?? undefined;
   let shopifyOrderId: string | undefined;
@@ -77,7 +79,10 @@ export async function POST(request: Request): Promise<Response> {
       targetQuantity: adjustment.targetQuantity,
     });
 
-    const bigblueRequest = createBigblueClient({ apiKey: getBigblueApiKey() });
+    const bigblueRequest = createBigblueClient({
+      apiKey: getBigblueApiKey(),
+      deadlineAtMs,
+    });
     const result = await processFirstShipmentAdjustment(
       bigblueRequest,
       order,

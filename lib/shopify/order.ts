@@ -17,6 +17,7 @@ export type ShopifyOrder = {
   id: number;
   name?: string;
   taxes_included?: boolean;
+  total_price?: string;
   created_at: string;
   line_items: ShopifyOrderLineItem[];
 };
@@ -154,8 +155,13 @@ export function parseShopifyOrder(rawBody: string): ShopifyOrder {
     throw new InvalidShopifyOrderError("Order taxes_included is invalid");
   }
 
+  const totalPrice = value.total_price === undefined
+    ? undefined
+    : parseMoney(value.total_price, "Order total_price");
+
   return {
     ...(value.taxes_included === undefined ? {} : { taxes_included: value.taxes_included }),
+    ...(totalPrice === undefined ? {} : { total_price: totalPrice }),
     id: Number(value.id),
     ...(value.name === undefined ? {} : { name: value.name }),
     created_at: value.created_at,

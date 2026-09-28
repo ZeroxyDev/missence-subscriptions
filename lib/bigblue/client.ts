@@ -10,6 +10,7 @@ export type BigblueRequest = <TRequest, TResponse>(
 type BigblueClientOptions = {
   apiKey: string;
   baseUrl?: string;
+  deadlineAtMs?: number;
   fetchImplementation?: typeof fetch;
   timeoutMs?: number;
 };
@@ -67,6 +68,7 @@ function getApiErrorDetails(value: unknown): {
 export function createBigblueClient({
   apiKey,
   baseUrl = BIGBLUE_BASE_URL,
+  deadlineAtMs,
   fetchImplementation = fetch,
   timeoutMs = DEFAULT_TIMEOUT_MS,
 }: BigblueClientOptions): BigblueRequest {
@@ -76,8 +78,15 @@ export function createBigblueClient({
     method: string,
     payload: TRequest,
   ): Promise<TResponse> {
+    const remainingMs = deadlineAtMs === undefined
+      ? timeoutMs
+      : Math.min(timeoutMs, deadlineAtMs - Date.now());
+    if (remainingMs <= 0) {
+      throw new BigblueApiError("Bigblue request deadline exceeded", null, "timeout", true);
+    }
+
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), timeoutMs);
+    const timeout = setTimeout(() => controller.abort(), remainingMs);
 
     try {
       const response = await fetchImplementation(`${normalizedBaseUrl}/${method}`, {

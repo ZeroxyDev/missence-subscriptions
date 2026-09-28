@@ -418,6 +418,7 @@ export function planBigblueLineItemAdjustment(
 export function buildUpdateOrderPayload(
   order: BigblueOrder,
   lineItems: BigblueLineItem[],
+  clearRoundingAdditionalTax = false,
 ): UpdateOrderPayload {
   const mutableOrder: Record<string, unknown> = {};
 
@@ -425,6 +426,10 @@ export function buildUpdateOrderPayload(
     if (field in order) {
       mutableOrder[field] = order[field];
     }
+  }
+
+  if (clearRoundingAdditionalTax) {
+    mutableOrder.additional_tax = "0.00";
   }
 
   return {
@@ -435,6 +440,54 @@ export function buildUpdateOrderPayload(
       line_items: lineItems,
     },
   };
+}
+
+function toCents(value: unknown): number | null {
+  if (typeof value === "string" && !/^-?\d+(?:\.\d{1,2})?$/.test(value)) {
+    return null;
+  }
+  if (
+    (typeof value !== "string" && typeof value !== "number") ||
+    !Number.isFinite(Number(value))
+  ) {
+    return null;
+  }
+
+  const cents = Math.round(Number(value) * 100);
+  return Number.isSafeInteger(cents) ? cents : null;
+}
+
+export function shouldClearRoundingAdditionalTax(
+  order: BigblueOrder,
+  plannedLineItems: readonly BigblueLineItem[],
+  shopifyTotalPrice: string | undefined,
+): boolean {
+  const additionalTax = toCents(order.additional_tax);
+  const shopifyTotal = toCents(shopifyTotalPrice);
+  const shippingPrice = toCents(order.shipping_price ?? "0");
+  const shippingTax = toCents(order.shipping_tax ?? "0");
+  const additionalDiscount = toCents(order.additional_discount ?? "0");
+
+  if (
+    additionalTax === null || Math.abs(additionalTax) !== 1 ||
+    shopifyTotal === null || shippingPrice === null ||
+    shippingTax === null || additionalDiscount === null
+  ) {
+    return false;
+  }
+
+  let plannedTotal = shippingPrice + shippingTax - additionalDiscount;
+  for (const item of plannedLineItems) {
+    const unitPrice = toCents(item.unit_price);
+    const unitTax = toCents(item.unit_tax ?? "0");
+    const discount = toCents(item.discount ?? "0");
+    if (unitPrice === null || unitTax === null || discount === null) {
+      return false;
+    }
+    plannedTotal += item.quantity * (unitPrice + unitTax) - discount;
+  }
+
+  return plannedTotal === shopifyTotal;
 }
 
 export async function updateBigblueOrder(

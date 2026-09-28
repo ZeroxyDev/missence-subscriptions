@@ -2,8 +2,11 @@ import { FULFILLMENT_SETTINGS } from "@/config/fulfillment-settings";
 import type { BigblueRequest } from "@/lib/bigblue/client";
 import {
   buildUpdateOrderPayload,
-  findBigblueOrderWithRetry,
+  findBigblueOrder,
+  BigblueOrderNotReadyError,
+  InvalidBigblueResponseError,
   planBigblueLineItemAdjustment,
+  shouldClearRoundingAdditionalTax,
   updateBigblueOrder,
 } from "@/lib/bigblue/orders";
 import { logIntegrationEvent } from "@/lib/observability/integration-log";
@@ -46,11 +49,14 @@ export async function processFirstShipmentAdjustment(
   const bigblueExternalIds = order.name
     ? [order.name, adjustment.shopifyOrderId]
     : [adjustment.shopifyOrderId];
-  const bigblueOrder = await findBigblueOrderWithRetry(
+  const bigblueOrder = await findBigblueOrder(
     request,
     bigblueExternalIds,
     order.created_at,
   );
+  if (!bigblueOrder) {
+    throw new BigblueOrderNotReadyError(bigblueExternalIds);
+  }
 
   logIntegrationEvent("bigblue_order_found", {
     shopifyOrderId: adjustment.shopifyOrderId,
@@ -72,6 +78,12 @@ export async function processFirstShipmentAdjustment(
     adjustment,
     FULFILLMENT_SETTINGS,
   );
+  const normalizeAdditionalTax = shouldClearRoundingAdditionalTax(
+    bigblueOrder,
+    plan.lineItems,
+    order.total_price,
+  );
+  const needsUpdate = !plan.alreadyAdjusted || normalizeAdditionalTax;
 
   logIntegrationEvent("adjustment_planned", {
     shopifyOrderId: adjustment.shopifyOrderId,
@@ -80,12 +92,13 @@ export async function processFirstShipmentAdjustment(
     replacementEnabled: FULFILLMENT_SETTINGS.replaceExperienceSku,
     previousQuantity: plan.previousQuantity,
     targetQuantity: adjustment.targetQuantity,
-    alreadyAdjusted: plan.alreadyAdjusted,
+    alreadyAdjusted: !needsUpdate,
+    normalizeAdditionalTax,
     before: summarizeBigblueLineItems(bigblueOrder.line_items),
     after: summarizeBigblueLineItems(plan.lineItems),
   });
 
-  if (plan.alreadyAdjusted) {
+  if (!needsUpdate) {
     logIntegrationEvent("already_adjusted", {
       shopifyOrderId: adjustment.shopifyOrderId,
       bigblueOrderId: bigblueOrder.id,
@@ -103,8 +116,61 @@ export async function processFirstShipmentAdjustment(
     };
   }
 
-  const payload = buildUpdateOrderPayload(bigblueOrder, plan.lineItems);
+  const payload = buildUpdateOrderPayload(
+    bigblueOrder,
+    plan.lineItems,
+    normalizeAdditionalTax,
+  );
   await updateBigblueOrder(request, payload);
+
+  const persistedOrder = await findBigblueOrder(
+    request,
+    bigblueExternalIds,
+    order.created_at,
+  );
+
+  if (!persistedOrder) {
+    throw new InvalidBigblueResponseError(
+      `Updated Bigblue order ${bigblueOrder.id} could not be verified`,
+    );
+  }
+
+  const persistedPlan = planBigblueLineItemAdjustment(
+    persistedOrder.line_items,
+    adjustment,
+    FULFILLMENT_SETTINGS,
+  );
+
+  const normalizationPersisted = !normalizeAdditionalTax ||
+    Number(persistedOrder.additional_tax) === 0;
+  if (!normalizationPersisted || !persistedPlan.alreadyAdjusted) {
+    logIntegrationEvent("update_not_persisted", {
+      shopifyOrderId: adjustment.shopifyOrderId,
+      bigblueOrderId: bigblueOrder.id,
+      pair: adjustment.pair,
+      lineItems: summarizeBigblueLineItems(persistedOrder.line_items),
+      additionalTax:
+        typeof persistedOrder.additional_tax === "string" ||
+        typeof persistedOrder.additional_tax === "number"
+          ? persistedOrder.additional_tax
+          : undefined,
+    });
+    throw new InvalidBigblueResponseError(
+      `Updated Bigblue order ${bigblueOrder.id} did not preserve the adjustment`,
+    );
+  }
+
+  logIntegrationEvent("update_verified", {
+    shopifyOrderId: adjustment.shopifyOrderId,
+    bigblueOrderId: bigblueOrder.id,
+    pair: adjustment.pair,
+    lineItems: summarizeBigblueLineItems(persistedOrder.line_items),
+    additionalTax:
+      typeof persistedOrder.additional_tax === "string" ||
+      typeof persistedOrder.additional_tax === "number"
+        ? persistedOrder.additional_tax
+        : undefined,
+  });
 
   logIntegrationEvent("updated", {
     shopifyOrderId: adjustment.shopifyOrderId,

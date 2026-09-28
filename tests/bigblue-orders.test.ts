@@ -5,6 +5,7 @@ import {
   buildUpdateOrderPayload,
   findBigblueOrder,
   planBigblueLineItemAdjustment,
+  shouldClearRoundingAdditionalTax,
   type BigblueOrder,
 } from "@/lib/bigblue/orders";
 import type { BigblueRequest } from "@/lib/bigblue/client";
@@ -201,6 +202,41 @@ describe("buildUpdateOrderPayload", () => {
     assert.equal("status" in payload.order, false);
     assert.equal("total" in payload.order, false);
     assert.equal("store" in payload.order, false);
+  });
+
+  it("clears a one-cent tax remainder only when the planned total matches Shopify", () => {
+    const order: BigblueOrder = {
+      id: "MISSS1001046",
+      external_id: "#1046",
+      additional_tax: "-0.01",
+      line_items: [],
+    };
+    const lines = [{ product: "MISS-000000-0003", quantity: 1,
+      unit_price: "181.41", unit_tax: "15.59", discount: "0.00" }];
+
+    assert.equal(shouldClearRoundingAdditionalTax(order, lines, "197.00"), true);
+    assert.equal(shouldClearRoundingAdditionalTax(order, lines, "196.99"), false);
+    assert.equal(shouldClearRoundingAdditionalTax(order, lines, undefined), false);
+    assert.equal(
+      buildUpdateOrderPayload(order, lines, true).order.additional_tax,
+      "0.00",
+    );
+    assert.equal(buildUpdateOrderPayload(order, lines).order.additional_tax, "-0.01");
+  });
+
+  it("preserves material additional tax", () => {
+    const order: BigblueOrder = {
+      id: "MISSS1001046",
+      external_id: "#1046",
+      additional_tax: "1.25",
+      line_items: [],
+    };
+
+    assert.equal(shouldClearRoundingAdditionalTax(order, [], "0.00"), false);
+    assert.equal(
+      buildUpdateOrderPayload(order, []).order.additional_tax,
+      "1.25",
+    );
   });
 });
 
