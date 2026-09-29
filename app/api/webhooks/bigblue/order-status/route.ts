@@ -37,16 +37,19 @@ export async function GET(request: Request): Promise<Response> {
 }
 
 export async function POST(request: Request): Promise<Response> {
-  const rejected = authenticate(request);
-  if (rejected) return rejected;
-
   const rawBody = await request.text();
   const eventType = request.headers.get("x-bigblue-event-type");
   const signature = request.headers.get("x-bigblue-hmac-sha256");
-  const sharedSecret = getBigblueWebhookKey();
+  let sharedSecret: string;
+  try {
+    sharedSecret = getBigblueWebhookKey();
+  } catch {
+    logIntegrationEvent("reconciliation_configuration_error", { variable: "BIGBLUE_WEBHOOK_KEY" });
+    return Response.json({ ok: false, error: "not_configured" }, { status: 503 });
+  }
 
-  // Bigblue verifies the target URL with a signed (or token-authenticated)
-  // JSON POST and requires the exact same JSON object in the response.
+  // Bigblue verifies the URL with a JSON POST and requires that exact JSON in
+  // the response. This branch never accesses Shopify or Bigblue order data.
   if (eventType === "URL_VERIFICATION") {
     if (signature !== null && !verifyBigblueWebhookHmac(rawBody, signature, sharedSecret)) {
       return Response.json({ ok: false, error: "invalid_hmac" }, { status: 401 });
@@ -67,7 +70,7 @@ export async function POST(request: Request): Promise<Response> {
     return Response.json({ ok: false, error: "invalid_hmac" }, { status: 401 });
   }
 
-  // Every authenticated status event triggers an idempotent comparison with
+  // Every HMAC-authenticated status event triggers an idempotent comparison with
   // Shopify, including if our UpdateOrder emits another status event.
   logIntegrationEvent("bigblue_webhook_received", { eventType: "order_status_update" });
   try {
