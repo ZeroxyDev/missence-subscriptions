@@ -54,6 +54,9 @@ SHOPIFY_WEBHOOK_SECRET=
 SHOPIFY_STORE_DOMAIN=missence.com
 SHOPIFY_PUBLIC_ACCESS_TOKEN=
 SHOPIFY_PRIVATE_ACCESS_TOKEN=
+SHOPIFY_ACCESS_TOKEN=
+SHOPIFY_ADMIN_STORE_DOMAIN=
+RECONCILIATION_CRON_SECRET=
 BIGBLUE_API_KEY=
 BIGBLUE_WEBHOOK_KEY=
 ```
@@ -62,8 +65,11 @@ BIGBLUE_WEBHOOK_KEY=
 - `SHOPIFY_STORE_DOMAIN`: dominio usado para consultar Storefront API. Si se omite, utiliza `missence.com`.
 - `SHOPIFY_PRIVATE_ACCESS_TOKEN`: token privado de Storefront API utilizado únicamente en servidor para comprobar la conexión con Shopify.
 - `SHOPIFY_PUBLIC_ACCESS_TOKEN`: token público disponible para futuros usos en cliente; el flujo actual no lo necesita.
+- `SHOPIFY_ACCESS_TOKEN`: token de Admin GraphQL API con permiso `read_orders` para reconciliar los pedidos recientes. No es el token privado de Storefront. También se admite `SHOPIFY_ADMIN_ACCESS_TOKEN` como alternativa.
+- `SHOPIFY_ADMIN_STORE_DOMAIN`: dominio permanente `*.myshopify.com` de la tienda si `SHOPIFY_STORE_DOMAIN` es un dominio público. Si `SHOPIFY_STORE_DOMAIN` ya es `cy6gdd-q8.myshopify.com`, se reutiliza y esta variable no hace falta.
+- `RECONCILIATION_CRON_SECRET`: secreto aleatorio que debe enviar el cron externo como `Authorization: Bearer <secreto>`.
 - `BIGBLUE_API_KEY`: API key enviada como `Authorization: Bearer ...` a la Store API.
-- `BIGBLUE_WEBHOOK_KEY`: shared secret para verificar futuros webhooks entrantes de Bigblue. No se usa en el flujo Shopify → Bigblue. El nombre existente `BIGBLUE_WEBHOOKE_KEY` puede permanecer mientras no recibamos esos webhooks.
+- `BIGBLUE_WEBHOOK_KEY`: clave que se usa para derivar un token exclusivo para la URL del webhook de Bigblue. Debe tener el mismo valor en local y Vercel. La clave original nunca se introduce en la URL.
 
 Los secretos solo se leen en módulos de servidor y nunca se incluyen en logs.
 
@@ -156,9 +162,39 @@ Bigblue guarda actualmente el número visible de Shopify, por ejemplo `#1026`, c
 
 Se usa una ventana de una hora a ambos lados de `created_at` y paginación con `next_page_token`. El webhook hace una búsqueda inmediata: si Bigblue todavía no muestra el pedido, devuelve `503` para que Shopify vuelva a entregar el evento. Shopify exige responder en cinco segundos; por eso las llamadas a Bigblue comparten un plazo de cuatro segundos. Shopify limita los reintentos; si se agotan, hace falta una recuperación manual.
 
-Después de `UpdateOrder`, el webhook relee el pedido sin espera y verifica cantidades, SKUs, precios y el ajuste fiscal aplicado. Si la actualización todavía no aparece en Bigblue, devuelve `503`. Esta comprobación confirma el estado inmediato; una sincronización posterior desde Shopify puede modificarlo otra vez. Para garantizar la persistencia a largo plazo hace falta una cola durable y una reconciliación posterior de pedidos pendientes.
+Después de `UpdateOrder`, el webhook relee el pedido sin espera y verifica cantidades, SKUs, precios, moneda y **el `total` que Bigblue devuelve** contra `total_price` de Shopify. Si la actualización todavía no aparece en Bigblue o el total difiere aunque sea un céntimo, devuelve `503`: nunca registra el pedido como correcto. Esta comprobación confirma el estado inmediato; una sincronización posterior desde Shopify puede modificarlo otra vez. La reconciliación programada vuelve a comparar los pedidos recientes con Shopify y reaplica el estado deseado mientras Bigblue siga en `PENDING`.
 
-El residuo de `additional_tax` de un céntimo solo se limpia cuando la suma de las líneas finales y otros cargos de Bigblue, sin ese residuo, coincide exactamente con `total_price` de Shopify. Si el webhook no proporciona el total o hay otros cargos que no se pueden conciliar, se conserva el valor original.
+### Reconciliación programada (necesaria en producción)
+
+La ruta `POST /api/cron/reconcile-bigblue` requiere `Authorization: Bearer <RECONCILIATION_CRON_SECRET>`. Consulta por Admin GraphQL los pedidos de las últimas 48 horas que incluyen una de las experiencias configuradas, descarta pedidos cancelados o ya procesados y ajusta los que Bigblue tenga en `PENDING`. También reevalúa pedidos editados si todavía conservan la pareja configurada. Es idempotente: si el pedido sigue correcto, no escribe. Si un pedido falla, devuelve `503` y registra `reconciliation_failed`; el siguiente ciclo vuelve a intentarlo.
+
+En Vercel Hobby configura un cron externo, por ejemplo cada cinco minutos, para enviar una petición `POST` a `https://<tu-dominio>/api/cron/reconcile-bigblue` con esa cabecera. No basta con desplegar el código: hay que configurar en Vercel `SHOPIFY_ACCESS_TOKEN`, `SHOPIFY_STORE_DOMAIN=cy6gdd-q8.myshopify.com` (o `SHOPIFY_ADMIN_STORE_DOMAIN`) y `RECONCILIATION_CRON_SECRET`, y crear el cron externo con el mismo secreto. El token necesita permiso `read_orders`. Usa un secreto largo y no lo pongas en la URL. Supervisa las respuestas distintas de `200` y el evento `reconciliation_finished`.
+
+Si Bigblue prepara un pedido antes del siguiente ciclo, la ruta lo omite por seguridad y no puede corregirlo automáticamente; en ese caso hay que detener la preparación y resolverlo con Bigblue. Si una edición elimina la pareja de productos, no hay una transformación segura y el pedido requiere revisión manual.
+
+### Webhooks de cambios de pedido en Shopify
+
+La ruta `POST /api/webhooks/shopify/order-events` recibe **`orders/updated` y `orders/edited`**. Verifica el HMAC, el tema y el dominio de la tienda. Después obtiene por Admin GraphQL el estado **actual** del pedido concreto (el payload de `orders/edited` solo contiene el cambio), usando `currentQuantity` y `currentTotalPriceSet` para no confundir unidades retiradas ni importes originales con los vigentes. Los impuestos y descuentos de líneas editadas se prorratean, pero **solo** se escribe en Bigblue si el total planificado cuadra exactamente con el total vigente de Shopify. Comprueba o corrige Bigblue mientras siga en `PENDING`. Si Bigblue aún no tiene el pedido o la reconciliación falla, devuelve `503` para reintentar. Los eventos de pedidos cancelados o ya enviados no modifican Bigblue. Si una edición quita la pareja, registra `manual_review_required`.
+
+Estos eventos ayudan a detectar cambios en Shopify, pero no garantizan detectar una reversión interna de Bigblue que no cambie Shopify. Por eso el cron externo sigue siendo necesario como verificación periódica.
+
+### Webhook de Bigblue (complementario)
+
+En la pantalla de Bigblue selecciona **Order Status Update**, nunca **Inventory Update**. El Target URL apunta al receptor `POST /api/webhooks/bigblue/order-status`. Bigblue solo pide una URL, así que se añade un token de acceso derivado de `BIGBLUE_WEBHOOK_KEY` a esa URL; el receptor lo compara antes de hacer cualquier consulta. Para generar la URL completa **en tu equipo**, sin publicar la clave original:
+
+```bash
+node --env-file=.env --import tsx scripts/print-bigblue-webhook-url.mjs https://missence.vercel.app
+```
+
+Copia la URL resultante en **Target URL** y elige **Order Status Update** en **Event Type**. Trata la URL generada como un secreto: no la compartas en chats ni la registres en logs públicos. Configura `BIGBLUE_WEBHOOK_KEY`, `SHOPIFY_ACCESS_TOKEN`, `SHOPIFY_STORE_DOMAIN` y `BIGBLUE_API_KEY` en Vercel antes de activarlo. Un `GET` autenticado responde `200` para comprobación; cada `POST` autenticado lanza la reconciliación idempotente contra Shopify.
+
+Este evento está documentado como actualización de *estado*, no como actualización de las líneas del pedido. No hay confirmación de que Bigblue lo emita cuando revierte solo la cantidad manteniendo el estado `PENDING`: por tanto el webhook **no sustituye** el cron externo como garantía. Una prueba real con una reversión y sus logs es necesaria para saber si en esta tienda sirve de disparador suficiente.
+
+### Comprobación exacta del precio
+
+Antes de enviar `UpdateOrder`, se comprueba que el total de la tienda y el importe en la moneda del cliente (*presentment*) de Shopify coinciden; si hay conversión de moneda o diferencia, se detiene el ajuste en lugar de declarar un precio falso. Después se suman en céntimos las líneas finales, los impuestos, el envío, `additional_tax` y los descuentos tal como Bigblue calcula `total`. La operación solo se envía si esa suma coincide exactamente con el total de Shopify. Tras actualizar se comprueban **dos importes**: el total recalculado desde las líneas que Bigblue guardó y el campo `total` devuelto por Bigblue. Ambos deben ser idénticos a Shopify, con la misma moneda. Un pedido aparentemente ajustado también se relee y valida; si `total` está desfasado, se fuerza una nueva actualización y se verifica.
+
+El residuo de `additional_tax` de un céntimo solo se limpia si eso deja el total exactamente igual al de Shopify. No se añade ningún cargo, descuento o “céntimo de compensación” inventado para tapar un descuadre. Si falta un total verificable o los importes no cuadran, se registra `price_mismatch`/`update_not_persisted` y se devuelve `503` para que se investigue o se reintente, sin afirmar éxito.
 
 ### Payload de UpdateOrder
 
@@ -193,13 +229,20 @@ ignored_no_pair
 invalid_shopify_hmac
 bigblue_not_ready
 bigblue_order_found
+bigblue_webhook_received
 adjustment_detected
 adjustment_planned
 already_adjusted
 update_verified
 update_not_persisted
+price_mismatch
+price_verified
 updated
 update_failed
+reconciliation_skipped
+reconciliation_failed
+reconciliation_finished
+reconciliation_configuration_error
 invalid_shopify_topic
 invalid_shopify_payload
 ```
@@ -219,6 +262,18 @@ Topic: orders/create
 Format: JSON
 URL: https://<dominio>/api/webhooks/shopify/orders-create
 ```
+
+Añadir **dos suscripciones más**, ambas en JSON y ambas con la misma URL nueva:
+
+```text
+Topic: orders/updated
+URL: https://missence.vercel.app/api/webhooks/shopify/order-events
+
+Topic: orders/edited
+URL: https://missence.vercel.app/api/webhooks/shopify/order-events
+```
+
+No apuntar `orders/create` a esta URL; conserva su receptor actual. Activa las dos suscripciones nuevas **solo después de desplegar la ruta**.
 
 Antes de producción:
 

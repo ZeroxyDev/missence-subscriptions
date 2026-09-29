@@ -2,11 +2,13 @@ import { FULFILLMENT_SETTINGS } from "@/config/fulfillment-settings";
 import type { BigblueRequest } from "@/lib/bigblue/client";
 import {
   buildUpdateOrderPayload,
+  calculateBigblueTotalCents,
   findBigblueOrder,
   BigblueOrderNotReadyError,
   InvalidBigblueResponseError,
   planBigblueLineItemAdjustment,
   shouldClearRoundingAdditionalTax,
+  toCents,
   updateBigblueOrder,
 } from "@/lib/bigblue/orders";
 import { logIntegrationEvent } from "@/lib/observability/integration-log";
@@ -41,10 +43,18 @@ export type FirstShipmentResult =
       targetQuantity: number;
     };
 
+export class BigblueOrderNotPendingError extends Error {
+  constructor(readonly orderId: string, readonly status: string | undefined) {
+    super(`Bigblue order ${orderId} is not pending`);
+    this.name = "BigblueOrderNotPendingError";
+  }
+}
+
 export async function processFirstShipmentAdjustment(
   request: BigblueRequest,
   order: ShopifyOrder,
   adjustment: ActionableAdjustment,
+  options: { requirePending?: boolean } = {},
 ): Promise<FirstShipmentResult> {
   const bigblueExternalIds = order.name
     ? [order.name, adjustment.shopifyOrderId]
@@ -58,18 +68,60 @@ export async function processFirstShipmentAdjustment(
     throw new BigblueOrderNotReadyError(bigblueExternalIds);
   }
 
+  const status =
+    typeof bigblueOrder.status === "object" &&
+    bigblueOrder.status !== null &&
+    "code" in bigblueOrder.status &&
+    typeof bigblueOrder.status.code === "string"
+      ? bigblueOrder.status.code
+      : undefined;
+
+  if (options.requirePending && status !== "PENDING") {
+    throw new BigblueOrderNotPendingError(bigblueOrder.id, status);
+  }
+
+  if (order.currency && bigblueOrder.currency !== order.currency) {
+    logIntegrationEvent("price_mismatch", {
+      stage: "currency",
+      shopifyOrderId: adjustment.shopifyOrderId,
+      bigblueOrderId: bigblueOrder.id,
+      shopifyCurrency: order.currency,
+      bigblueCurrency: typeof bigblueOrder.currency === "string" ? bigblueOrder.currency : undefined,
+    });
+    throw new InvalidBigblueResponseError(`Bigblue currency does not match Shopify for ${bigblueOrder.id}`);
+  }
+
+  const shopifyTotalCents = toCents(order.total_price);
+  const reportedBeforeCents = toCents(bigblueOrder.total);
+  if (shopifyTotalCents === null || reportedBeforeCents === null) {
+    throw new InvalidBigblueResponseError(`Order total is unavailable for ${bigblueOrder.id}`);
+  }
+
+  const customerTotalCents = order.presentment_total_price === undefined
+    ? shopifyTotalCents
+    : toCents(order.presentment_total_price);
+  if (
+    customerTotalCents !== shopifyTotalCents ||
+    (order.presentment_currency !== undefined && order.presentment_currency !== order.currency)
+  ) {
+    logIntegrationEvent("price_mismatch", {
+      stage: "customer_price",
+      shopifyOrderId: adjustment.shopifyOrderId,
+      bigblueOrderId: bigblueOrder.id,
+      shopifyTotalCents,
+      customerTotalCents,
+      shopifyCurrency: order.currency,
+      customerCurrency: order.presentment_currency,
+    });
+    throw new InvalidBigblueResponseError(`Customer-facing total cannot be matched to Bigblue for ${bigblueOrder.id}`);
+  }
+
   logIntegrationEvent("bigblue_order_found", {
     shopifyOrderId: adjustment.shopifyOrderId,
     bigblueOrderId: bigblueOrder.id,
     pair: adjustment.pair,
     matchedExternalId: String(bigblueOrder.external_id),
-    status:
-      typeof bigblueOrder.status === "object" &&
-      bigblueOrder.status !== null &&
-      "code" in bigblueOrder.status &&
-      typeof bigblueOrder.status.code === "string"
-        ? bigblueOrder.status.code
-        : undefined,
+    status,
     lineItems: summarizeBigblueLineItems(bigblueOrder.line_items),
   });
 
@@ -83,7 +135,24 @@ export async function processFirstShipmentAdjustment(
     plan.lineItems,
     order.total_price,
   );
-  const needsUpdate = !plan.alreadyAdjusted || normalizeAdditionalTax;
+  const plannedTotalCents = calculateBigblueTotalCents(
+    bigblueOrder,
+    plan.lineItems,
+    normalizeAdditionalTax ? "0.00" : undefined,
+  );
+  if (plannedTotalCents !== shopifyTotalCents) {
+    logIntegrationEvent("price_mismatch", {
+      stage: "planned",
+      shopifyOrderId: adjustment.shopifyOrderId,
+      bigblueOrderId: bigblueOrder.id,
+      shopifyTotalCents,
+      plannedTotalCents,
+      reportedBigblueTotalCents: reportedBeforeCents,
+    });
+    throw new InvalidBigblueResponseError(`Planned Bigblue total does not match Shopify for ${bigblueOrder.id}`);
+  }
+  const needsUpdate = !plan.alreadyAdjusted || normalizeAdditionalTax ||
+    reportedBeforeCents !== shopifyTotalCents;
 
   logIntegrationEvent("adjustment_planned", {
     shopifyOrderId: adjustment.shopifyOrderId,
@@ -94,11 +163,20 @@ export async function processFirstShipmentAdjustment(
     targetQuantity: adjustment.targetQuantity,
     alreadyAdjusted: !needsUpdate,
     normalizeAdditionalTax,
+    shopifyTotalCents,
+    plannedTotalCents,
+    reportedBigblueTotalCents: reportedBeforeCents,
     before: summarizeBigblueLineItems(bigblueOrder.line_items),
     after: summarizeBigblueLineItems(plan.lineItems),
   });
 
   if (!needsUpdate) {
+    logIntegrationEvent("price_verified", {
+      shopifyOrderId: adjustment.shopifyOrderId,
+      bigblueOrderId: bigblueOrder.id,
+      totalCents: shopifyTotalCents,
+      currency: order.currency,
+    });
     logIntegrationEvent("already_adjusted", {
       shopifyOrderId: adjustment.shopifyOrderId,
       bigblueOrderId: bigblueOrder.id,
@@ -143,7 +221,31 @@ export async function processFirstShipmentAdjustment(
 
   const normalizationPersisted = !normalizeAdditionalTax ||
     Number(persistedOrder.additional_tax) === 0;
-  if (!normalizationPersisted || !persistedPlan.alreadyAdjusted) {
+  const persistedTotalCents = calculateBigblueTotalCents(persistedOrder);
+  const reportedPersistedTotalCents = toCents(persistedOrder.total);
+  const currencyPersisted = !order.currency || persistedOrder.currency === order.currency;
+  if (
+    !normalizationPersisted || !persistedPlan.alreadyAdjusted ||
+    persistedTotalCents !== shopifyTotalCents ||
+    reportedPersistedTotalCents !== shopifyTotalCents ||
+    !currencyPersisted
+  ) {
+    if (
+      persistedTotalCents !== shopifyTotalCents ||
+      reportedPersistedTotalCents !== shopifyTotalCents ||
+      !currencyPersisted
+    ) {
+      logIntegrationEvent("price_mismatch", {
+        stage: "persisted",
+        shopifyOrderId: adjustment.shopifyOrderId,
+        bigblueOrderId: bigblueOrder.id,
+        shopifyTotalCents,
+        calculatedBigblueTotalCents: persistedTotalCents,
+        reportedBigblueTotalCents: reportedPersistedTotalCents,
+        shopifyCurrency: order.currency,
+        bigblueCurrency: typeof persistedOrder.currency === "string" ? persistedOrder.currency : undefined,
+      });
+    }
     logIntegrationEvent("update_not_persisted", {
       shopifyOrderId: adjustment.shopifyOrderId,
       bigblueOrderId: bigblueOrder.id,
@@ -154,6 +256,10 @@ export async function processFirstShipmentAdjustment(
         typeof persistedOrder.additional_tax === "number"
           ? persistedOrder.additional_tax
           : undefined,
+      shopifyTotalCents,
+      calculatedBigblueTotalCents: persistedTotalCents,
+      reportedBigblueTotalCents: reportedPersistedTotalCents,
+      currencyMatches: currencyPersisted,
     });
     throw new InvalidBigblueResponseError(
       `Updated Bigblue order ${bigblueOrder.id} did not preserve the adjustment`,
@@ -170,6 +276,16 @@ export async function processFirstShipmentAdjustment(
       typeof persistedOrder.additional_tax === "number"
         ? persistedOrder.additional_tax
         : undefined,
+    shopifyTotalCents,
+    calculatedBigblueTotalCents: persistedTotalCents,
+    reportedBigblueTotalCents: reportedPersistedTotalCents,
+  });
+
+  logIntegrationEvent("price_verified", {
+    shopifyOrderId: adjustment.shopifyOrderId,
+    bigblueOrderId: bigblueOrder.id,
+    totalCents: shopifyTotalCents,
+    currency: order.currency,
   });
 
   logIntegrationEvent("updated", {

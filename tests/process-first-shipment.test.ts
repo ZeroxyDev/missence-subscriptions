@@ -4,6 +4,7 @@ import { describe, it } from "node:test";
 import { PRODUCT_PAIRS } from "@/config/subscription-product-pairs";
 import type { BigblueRequest } from "@/lib/bigblue/client";
 import {
+  calculateBigblueTotalCents,
   InvalidBigblueResponseError,
   type BigblueOrder,
   type UpdateOrderPayload,
@@ -75,8 +76,16 @@ function bigblueOrder(subscriptionQuantity: 1 | 2): BigblueOrder {
 function fakeBigblue(
   initialOrder: BigblueOrder,
   overwriteUpdate = false,
-): { request: BigblueRequest; current: () => BigblueOrder } {
-  let currentOrder = structuredClone(initialOrder);
+  reportedTotalAfterUpdate?: string,
+): { request: BigblueRequest; current: () => BigblueOrder; writes: () => number } {
+  function withTotal(order: BigblueOrder): BigblueOrder {
+    const total = calculateBigblueTotalCents(order);
+    assert.notEqual(total, null);
+    return { ...order, total: (total! / 100).toFixed(2) };
+  }
+  const originalOrder = withTotal(initialOrder);
+  let currentOrder = structuredClone(originalOrder);
+  let writes = 0;
 
   const request: BigblueRequest = async <TRequest, TResponse>(
     method: string,
@@ -87,14 +96,18 @@ function fakeBigblue(
     }
 
     assert.equal(method, "UpdateOrder");
+    writes += 1;
     const update = payload as UpdateOrderPayload;
     currentOrder = overwriteUpdate
-      ? structuredClone(initialOrder)
-      : (structuredClone(update.order) as BigblueOrder);
+      ? structuredClone(originalOrder)
+      : withTotal(structuredClone(update.order) as BigblueOrder);
+    if (!overwriteUpdate && reportedTotalAfterUpdate) {
+      currentOrder.total = reportedTotalAfterUpdate;
+    }
     return {} as TResponse;
   };
 
-  return { request, current: () => currentOrder };
+  return { request, current: () => currentOrder, writes: () => writes };
 }
 
 describe("processFirstShipmentAdjustment", () => {
@@ -180,5 +193,96 @@ describe("processFirstShipmentAdjustment", () => {
     assert.equal(bigblue.current().additional_tax, "0.00");
     assert.equal(bigblue.current().line_items.reduce((total, item) =>
       total + item.quantity * (Number(item.unit_price) + Number(item.unit_tax)) - Number(item.discount), 0), 197);
+    assert.equal(bigblue.current().total, "197.00");
+  });
+
+  it("refuses to send an update if the planned Bigblue total differs from Shopify", async () => {
+    const order = shopifyOrder(2);
+    const adjustment = detectFirstShipmentAdjustment(order);
+    assert.ok(adjustment.shouldAdjust);
+    const initial = bigblueOrder(2);
+    initial.additional_tax = "0.02";
+    const bigblue = fakeBigblue(initial);
+
+    await assert.rejects(
+      processFirstShipmentAdjustment(bigblue.request, order, adjustment),
+      /Planned Bigblue total does not match Shopify/,
+    );
+    assert.equal(bigblue.writes(), 0);
+  });
+
+  it("does not claim success if Bigblue reports an extra cent after UpdateOrder", async () => {
+    const order = shopifyOrder(2);
+    const adjustment = detectFirstShipmentAdjustment(order);
+    assert.ok(adjustment.shouldAdjust);
+    const bigblue = fakeBigblue(bigblueOrder(2), false, "157.01");
+
+    await assert.rejects(
+      processFirstShipmentAdjustment(bigblue.request, order, adjustment),
+      /did not preserve the adjustment/,
+    );
+    assert.equal(bigblue.writes(), 1);
+  });
+
+  it("retries a price correction when lines are already adjusted but Bigblue reports an extra cent", async () => {
+    const order = shopifyOrder(2);
+    const adjustment = detectFirstShipmentAdjustment(order);
+    assert.ok(adjustment.shouldAdjust);
+    const initial = bigblueOrder(2);
+    initial.line_items = [
+      {
+        product: pair.subscription.sku,
+        quantity: 1,
+        unit_price: adjustment.subscriptionPricing.unitPrice,
+        unit_tax: adjustment.subscriptionPricing.unitTax,
+        discount: adjustment.subscriptionPricing.discount,
+      },
+      {
+        product: pair.experience.replacement.sku,
+        quantity: 1,
+        unit_price: adjustment.experiencePricing.unitPrice,
+        unit_tax: adjustment.experiencePricing.unitTax,
+        discount: adjustment.experiencePricing.discount,
+      },
+    ];
+    const bigblue = fakeBigblue(initial);
+    bigblue.current().total = "157.01";
+
+    const result = await processFirstShipmentAdjustment(bigblue.request, order, adjustment);
+
+    assert.equal(result.ok, true);
+    assert.equal(bigblue.writes(), 1);
+    assert.equal(bigblue.current().total, "157.00");
+  });
+
+  it("rejects a currency mismatch before modifying Bigblue", async () => {
+    const order = { ...shopifyOrder(2), currency: "EUR" };
+    const adjustment = detectFirstShipmentAdjustment(order);
+    assert.ok(adjustment.shouldAdjust);
+    const bigblue = fakeBigblue({ ...bigblueOrder(2), currency: "USD" });
+
+    await assert.rejects(
+      processFirstShipmentAdjustment(bigblue.request, order, adjustment),
+      /currency does not match Shopify/,
+    );
+    assert.equal(bigblue.writes(), 0);
+  });
+
+  it("rejects a customer-facing amount that differs from Shopify's shop total", async () => {
+    const order = {
+      ...shopifyOrder(2),
+      currency: "EUR",
+      presentment_currency: "EUR",
+      presentment_total_price: "157.01",
+    };
+    const adjustment = detectFirstShipmentAdjustment(order);
+    assert.ok(adjustment.shouldAdjust);
+    const bigblue = fakeBigblue({ ...bigblueOrder(2), currency: "EUR" });
+
+    await assert.rejects(
+      processFirstShipmentAdjustment(bigblue.request, order, adjustment),
+      /Customer-facing total cannot be matched/,
+    );
+    assert.equal(bigblue.writes(), 0);
   });
 });

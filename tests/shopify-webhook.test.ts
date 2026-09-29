@@ -28,7 +28,10 @@ describe("parseShopifyOrder", () => {
       JSON.stringify({
         id: 123,
         name: "#1001",
+        currency: "EUR",
+        presentment_currency: "EUR",
         total_price: "48.00",
+        total_price_set: { presentment_money: { amount: "48.00", currency_code: "EUR" } },
         created_at: "2026-09-09T10:00:00Z",
         line_items: [
           {
@@ -47,6 +50,8 @@ describe("parseShopifyOrder", () => {
 
     assert.equal(order.id, 123);
     assert.equal(order.total_price, "48.00");
+    assert.equal(order.currency, "EUR");
+    assert.equal(order.presentment_total_price, "48.00");
     assert.equal(order.line_items[0]?.product_id, 10791019643207);
     assert.equal(order.line_items[0]?.quantity, 2);
     assert.equal(order.line_items[0]?.price, "25.00");

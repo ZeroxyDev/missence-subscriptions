@@ -52,3 +52,33 @@ export function getShopifyStoreDomain(): string {
 export function getBigblueApiKey(): string {
   return requireEnvironmentVariable("BIGBLUE_API_KEY");
 }
+
+export function getBigblueWebhookKey(): string {
+  return requireEnvironmentVariable("BIGBLUE_WEBHOOK_KEY");
+}
+
+export function getShopifyAdminAccessToken(): string {
+  return requireEnvironmentVariable("SHOPIFY_ACCESS_TOKEN", "SHOPIFY_ADMIN_ACCESS_TOKEN");
+}
+
+export function getShopifyAdminStoreDomain(): string {
+  const configured = requireEnvironmentVariable("SHOPIFY_ADMIN_STORE_DOMAIN", "SHOPIFY_STORE_DOMAIN");
+  let url: URL;
+  try {
+    url = new URL(configured.includes("://") ? configured : `https://${configured}`);
+  } catch {
+    throw new EnvironmentConfigurationError(["SHOPIFY_ADMIN_STORE_DOMAIN", "SHOPIFY_STORE_DOMAIN"]);
+  }
+  if (
+    url.protocol !== "https:" || url.pathname !== "/" || url.search || url.hash ||
+    url.username || url.password || url.port ||
+    !/^[a-z0-9][a-z0-9-]*\.myshopify\.com$/.test(url.hostname)
+  ) {
+    throw new EnvironmentConfigurationError(["SHOPIFY_ADMIN_STORE_DOMAIN", "SHOPIFY_STORE_DOMAIN"]);
+  }
+  return url.hostname;
+}
+
+export function getReconciliationCronSecret(): string {
+  return requireEnvironmentVariable("RECONCILIATION_CRON_SECRET");
+}

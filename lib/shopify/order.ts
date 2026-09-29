@@ -16,6 +16,9 @@ export type ShopifyOrderLineItem = {
 export type ShopifyOrder = {
   id: number;
   name?: string;
+  currency?: string;
+  presentment_currency?: string;
+  presentment_total_price?: string;
   taxes_included?: boolean;
   total_price?: string;
   created_at: string;
@@ -151,6 +154,18 @@ export function parseShopifyOrder(rawBody: string): ShopifyOrder {
     throw new InvalidShopifyOrderError("Order name is invalid");
   }
 
+  if (value.currency !== undefined && (
+    typeof value.currency !== "string" || !/^[A-Z]{3}$/.test(value.currency)
+  )) {
+    throw new InvalidShopifyOrderError("Order currency is invalid");
+  }
+
+  if (value.presentment_currency !== undefined && (
+    typeof value.presentment_currency !== "string" || !/^[A-Z]{3}$/.test(value.presentment_currency)
+  )) {
+    throw new InvalidShopifyOrderError("Order presentment_currency is invalid");
+  }
+
   if (value.taxes_included !== undefined && typeof value.taxes_included !== "boolean") {
     throw new InvalidShopifyOrderError("Order taxes_included is invalid");
   }
@@ -158,12 +173,29 @@ export function parseShopifyOrder(rawBody: string): ShopifyOrder {
   const totalPrice = value.total_price === undefined
     ? undefined
     : parseMoney(value.total_price, "Order total_price");
+  let presentmentTotalPrice: string | undefined;
+  if (value.total_price_set !== undefined) {
+    const set = value.total_price_set;
+    if (!isRecord(set) || !isRecord(set.presentment_money)) {
+      throw new InvalidShopifyOrderError("Order total_price_set is invalid");
+    }
+    presentmentTotalPrice = parseMoney(
+      set.presentment_money.amount,
+      "Order total_price_set.presentment_money.amount",
+    );
+  }
+  if (value.presentment_total_price !== undefined) {
+    presentmentTotalPrice = parseMoney(value.presentment_total_price, "Order presentment_total_price");
+  }
 
   return {
     ...(value.taxes_included === undefined ? {} : { taxes_included: value.taxes_included }),
     ...(totalPrice === undefined ? {} : { total_price: totalPrice }),
     id: Number(value.id),
     ...(value.name === undefined ? {} : { name: value.name }),
+    ...(value.currency === undefined ? {} : { currency: value.currency }),
+    ...(value.presentment_currency === undefined ? {} : { presentment_currency: value.presentment_currency }),
+    ...(presentmentTotalPrice === undefined ? {} : { presentment_total_price: presentmentTotalPrice }),
     created_at: value.created_at,
     line_items: value.line_items.map(parseLineItem),
   };
