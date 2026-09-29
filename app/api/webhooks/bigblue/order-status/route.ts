@@ -1,5 +1,6 @@
 import { getBigblueWebhookKey } from "@/config/server-env";
 import { verifyBigblueWebhookUrlToken } from "@/lib/bigblue/webhook-auth";
+import { isBigblueUrlVerificationBody, verifyBigblueWebhookHmac } from "@/lib/bigblue/verify-webhook";
 import { logIntegrationEvent } from "@/lib/observability/integration-log";
 import { runRecentBigblueReconciliation } from "@/lib/subscriptions/run-reconciliation";
 
@@ -39,10 +40,35 @@ export async function POST(request: Request): Promise<Response> {
   const rejected = authenticate(request);
   if (rejected) return rejected;
 
-  // Only Order Status Update is configured for this URL. Its payload format is
-  // not needed: every accepted event triggers a fresh comparison with Shopify.
-  // The reconciliation itself is idempotent, including if our UpdateOrder emits
-  // another status event.
+  const rawBody = await request.text();
+  const eventType = request.headers.get("x-bigblue-event-type");
+  const signature = request.headers.get("x-bigblue-hmac-sha256");
+  const sharedSecret = getBigblueWebhookKey();
+
+  // Bigblue verifies the target URL with a signed (or token-authenticated)
+  // JSON POST and requires the exact same JSON object in the response.
+  if (eventType === "URL_VERIFICATION") {
+    if (signature !== null && !verifyBigblueWebhookHmac(rawBody, signature, sharedSecret)) {
+      return Response.json({ ok: false, error: "invalid_hmac" }, { status: 401 });
+    }
+    if (!isBigblueUrlVerificationBody(rawBody)) {
+      return Response.json({ ok: false, error: "invalid_challenge" }, { status: 400 });
+    }
+    return new Response(rawBody, {
+      status: 200,
+      headers: { "Content-Type": "application/json", "Cache-Control": "no-store" },
+    });
+  }
+
+  if (eventType !== "ORDER_STATUS_UPDATE") {
+    return Response.json({ ok: false, error: "invalid_event_type" }, { status: 400 });
+  }
+  if (!verifyBigblueWebhookHmac(rawBody, signature, sharedSecret)) {
+    return Response.json({ ok: false, error: "invalid_hmac" }, { status: 401 });
+  }
+
+  // Every authenticated status event triggers an idempotent comparison with
+  // Shopify, including if our UpdateOrder emits another status event.
   logIntegrationEvent("bigblue_webhook_received", { eventType: "order_status_update" });
   try {
     const summary = await runRecentBigblueReconciliation();

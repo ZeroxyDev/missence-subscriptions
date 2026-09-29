@@ -180,13 +180,13 @@ Estos eventos ayudan a detectar cambios en Shopify, pero no garantizan detectar 
 
 ### Webhook de Bigblue (complementario)
 
-En la pantalla de Bigblue selecciona **Order Status Update**, nunca **Inventory Update**. El Target URL apunta al receptor `POST /api/webhooks/bigblue/order-status`. Bigblue solo pide una URL, así que se añade un token de acceso derivado de `BIGBLUE_WEBHOOK_KEY` a esa URL; el receptor lo compara antes de hacer cualquier consulta. Para generar la URL completa **en tu equipo**, sin publicar la clave original:
+En la pantalla de Bigblue selecciona **Order Status Update**, nunca **Inventory Update**. El Target URL apunta al receptor `POST /api/webhooks/bigblue/order-status`. Bigblue solo pide una URL, así que se añade un token de acceso derivado de `BIGBLUE_WEBHOOK_KEY` (el *Shared secret* de Bigblue) a esa URL; el receptor lo compara antes de hacer cualquier consulta. Para generar la URL completa **en tu equipo**, sin publicar la clave original:
 
 ```bash
 node --env-file=.env --import tsx scripts/print-bigblue-webhook-url.mjs https://missence.vercel.app
 ```
 
-Copia la URL resultante en **Target URL** y elige **Order Status Update** en **Event Type**. Trata la URL generada como un secreto: no la compartas en chats ni la registres en logs públicos. Configura `BIGBLUE_WEBHOOK_KEY`, `SHOPIFY_ACCESS_TOKEN`, `SHOPIFY_STORE_DOMAIN` y `BIGBLUE_API_KEY` en Vercel antes de activarlo. Un `GET` autenticado responde `200` para comprobación; cada `POST` autenticado lanza la reconciliación idempotente contra Shopify.
+Copia la URL resultante en **Target URL** y elige **Order Status Update** en **Event Type**. Trata la URL generada como un secreto: no la compartas en chats ni la registres en logs públicos. Configura `BIGBLUE_WEBHOOK_KEY`, `SHOPIFY_ACCESS_TOKEN`, `SHOPIFY_STORE_DOMAIN` y `BIGBLUE_API_KEY` en Vercel antes de activarlo. Un `GET` autenticado responde `200` para comprobación. Al registrar el webhook, Bigblue envía un **POST** `URL_VERIFICATION` con `{"challenge":"..."}`: el receptor devuelve `200` y exactamente el mismo JSON, sin ejecutar la reconciliación. Los POST `ORDER_STATUS_UPDATE` requieren `X-Bigblue-Hmac-SHA256` válido, calculado sobre el cuerpo original con el *Shared secret*, y entonces lanzan la reconciliación idempotente contra Shopify.
 
 Este evento está documentado como actualización de *estado*, no como actualización de las líneas del pedido. No hay confirmación de que Bigblue lo emita cuando revierte solo la cantidad manteniendo el estado `PENDING`: por tanto el webhook **no sustituye** el cron externo como garantía. Una prueba real con una reversión y sus logs es necesaria para saber si en esta tienda sirve de disparador suficiente.
 
