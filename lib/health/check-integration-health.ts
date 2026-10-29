@@ -1,3 +1,14 @@
+/**
+ * @file Live connectivity checks behind `GET /api/health`.
+ *
+ * Probes Bigblue and Shopify with cheap read-only requests and validates the
+ * local product configuration. Results are cached for 30 seconds and
+ * concurrent callers share one in-flight run, so the public endpoint cannot be
+ * used to amplify traffic towards the upstream APIs.
+ *
+ * @module lib/health/check-integration-health
+ */
+
 import "server-only";
 
 import {
@@ -8,30 +19,37 @@ import {
 } from "@/config/server-env";
 import { getShopifyStorefrontGraphqlUrl } from "@/config/shopify";
 import { PRODUCT_PAIRS } from "@/config/subscription-product-pairs";
-import { BigblueApiError, createBigblueClient } from "@/lib/bigblue/client";
-import {
-  formatBigblueDateTime,
-  parseBigblueListOrdersResponse,
-} from "@/lib/bigblue/orders";
 import type {
   IntegrationCheck,
   IntegrationHealth,
 } from "@/lib/health/types";
+import { createBigblueClient } from "@/lib/integrations/bigblue/client";
+import { formatBigblueDateTime } from "@/lib/integrations/bigblue/datetime";
+import { BigblueApiError } from "@/lib/integrations/bigblue/errors";
+import { parseBigblueListOrdersResponse } from "@/lib/integrations/bigblue/parsers";
+import { isRecord } from "@/lib/shared/guards";
 
+/** How long a health report is reused. */
 const HEALTH_CACHE_MS = 30_000;
+/** Timeout for the Bigblue probe. */
 const BIGBLUE_HEALTH_TIMEOUT_MS = 5_000;
+/** Timeout for the Shopify probe. */
 const SHOPIFY_HEALTH_TIMEOUT_MS = 5_000;
+/** Window queried by the Bigblue probe. */
 const ONE_HOUR_MS = 60 * 60 * 1_000;
 
+/** Last completed report and its expiry (module-level, per server instance). */
 let cachedHealth:
   | { expiresAt: number; value: IntegrationHealth }
   | undefined;
+/** In-flight run shared by concurrent callers (single-flight). */
 let pendingHealth: Promise<IntegrationHealth> | undefined;
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
+/**
+ * Verifies Shopify credentials are configured and the Storefront API answers.
+ *
+ * @returns The Shopify check result; never throws.
+ */
 async function checkShopify(): Promise<IntegrationCheck> {
   let privateAccessToken: string;
 
@@ -107,6 +125,11 @@ async function checkShopify(): Promise<IntegrationCheck> {
   }
 }
 
+/**
+ * Sanity-checks the product pair catalogue (non-empty, unique IDs).
+ *
+ * @returns The products check result.
+ */
 function checkProductRules(): IntegrationCheck {
   const identifiers = new Set(PRODUCT_PAIRS.map((pair) => pair.id));
   const valid =
@@ -122,6 +145,12 @@ function checkProductRules(): IntegrationCheck {
   };
 }
 
+/**
+ * Converts a Bigblue probe failure into a user-facing message.
+ *
+ * @param error - Caught error.
+ * @returns A short Spanish explanation without sensitive details.
+ */
 function getBigblueErrorDetail(error: unknown): string {
   if (!(error instanceof BigblueApiError)) {
     return "No se pudo comprobar la conexión";
@@ -140,6 +169,11 @@ function getBigblueErrorDetail(error: unknown): string {
     : "No se pudo conectar con la API";
 }
 
+/**
+ * Verifies the Bigblue API key with a one-order `ListOrders` call.
+ *
+ * @returns The Bigblue check result; never throws.
+ */
 async function checkBigblue(): Promise<IntegrationCheck> {
   try {
     const now = new Date();
@@ -174,6 +208,11 @@ async function checkBigblue(): Promise<IntegrationCheck> {
   }
 }
 
+/**
+ * Runs every check (network probes in parallel).
+ *
+ * @returns A fresh health report.
+ */
 async function runHealthChecks(): Promise<IntegrationHealth> {
   const [bigblue, shopify] = await Promise.all([
     checkBigblue(),
@@ -188,6 +227,11 @@ async function runHealthChecks(): Promise<IntegrationHealth> {
   };
 }
 
+/**
+ * Returns the integration health, cached for 30 s and single-flighted.
+ *
+ * @returns The current (possibly cached) health report; never rejects.
+ */
 export async function checkIntegrationHealth(): Promise<IntegrationHealth> {
   const now = Date.now();
 

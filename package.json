@@ -7,11 +7,13 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "typecheck": "tsc --noEmit",
-    "test": "tsx --test tests/*.test.ts",
-    "check": "tsc --noEmit && eslint && tsx --test tests/*.test.ts",
+    "typecheck": "next typegen && tsc --noEmit",
+    "test": "tsx --conditions=react-server --test 'tests/**/*.test.ts'",
+    "check": "next typegen && tsc --noEmit && eslint && tsx --conditions=react-server --test 'tests/**/*.test.ts' && tsx scripts/docs/cli.ts check",
     "dry-run:bigblue": "tsx --env-file=.env scripts/bigblue-dry-run.ts",
-    "missence": "tsx scripts/missence.ts"
+    "missence": "tsx scripts/missence.ts",
+    "docs:check": "tsx scripts/docs/cli.ts check",
+    "docs:generate": "tsx scripts/docs/cli.ts generate"
   },
   "dependencies": {
     "next": "16.3.4",

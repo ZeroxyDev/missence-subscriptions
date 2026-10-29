@@ -1,47 +1,54 @@
-import { createHash, timingSafeEqual } from "node:crypto";
+/**
+ * @file `POST /api/cron/reconcile-bigblue` — scheduled reconciliation (required in production).
+ *
+ * Called by an external scheduler (e.g. every 5 minutes) with
+ * `Authorization: Bearer <RECONCILIATION_CRON_SECRET>`. Re-applies the
+ * first-shipment target to every recent order that Bigblue still has in
+ * `PENDING`. Idempotent: when everything is correct, nothing is written.
+ *
+ * | Status | Meaning                                                      |
+ * | ------ | ------------------------------------------------------------ |
+ * | 200    | Every order reconciled (`{ ok: true, ...summary }`)          |
+ * | 401    | Missing or wrong bearer secret                               |
+ * | 503    | Not configured, Shopify search failed, or any order failed   |
+ *
+ * @module app/api/cron/reconcile-bigblue/route
+ */
 
+import { getReconciliationCronSecret } from "@/config/server-env";
+import { isAuthorizedBearer, loadRequiredSecret } from "@/lib/http/request-auth";
 import {
-  getReconciliationCronSecret,
-} from "@/config/server-env";
+  reconciliationFailedResponse,
+  reconciliationSummaryResponse,
+  unauthorizedResponse,
+} from "@/lib/http/responses";
 import { logIntegrationEvent } from "@/lib/observability/integration-log";
-import { runRecentBigblueReconciliation } from "@/lib/subscriptions/run-reconciliation";
+import { describeErrorForLog } from "@/lib/shared/errors";
+import { runRecentBigblueReconciliation } from "@/lib/subscriptions/application/run-reconciliation";
 
+/** `node:crypto` is required for constant-time secret comparison. */
 export const runtime = "nodejs";
+/** A full reconciliation pass may take several Shopify and Bigblue round-trips. */
 export const maxDuration = 60;
 
-function authorized(header: string | null, secret: string): boolean {
-  if (!header?.startsWith("Bearer ")) return false;
-  const supplied = createHash("sha256").update(header.slice(7)).digest();
-  const expected = createHash("sha256").update(secret).digest();
-  return timingSafeEqual(supplied, expected);
-}
-
+/**
+ * Runs one reconciliation pass.
+ *
+ * @param request - Scheduler request with the bearer secret.
+ * @returns The reconciliation summary or an error response.
+ */
 export async function POST(request: Request): Promise<Response> {
-  let secret: string;
-  try {
-    secret = getReconciliationCronSecret();
-  } catch {
-    logIntegrationEvent("reconciliation_configuration_error", { variable: "RECONCILIATION_CRON_SECRET" });
-    return Response.json({ ok: false, error: "not_configured" }, { status: 503 });
-  }
+  const cronSecret = loadRequiredSecret(getReconciliationCronSecret, "RECONCILIATION_CRON_SECRET");
+  if (!cronSecret.ok) return cronSecret.response;
 
-  if (!authorized(request.headers.get("authorization"), secret)) {
-    return Response.json({ ok: false, error: "unauthorized" }, { status: 401 });
+  if (!isAuthorizedBearer(request.headers.get("authorization"), cronSecret.secret)) {
+    return unauthorizedResponse();
   }
 
   try {
-    const summary = await runRecentBigblueReconciliation();
-    return Response.json(
-      { ok: summary.failed === 0, ...summary },
-      { status: summary.failed === 0 ? 200 : 503, headers: { "Cache-Control": "no-store" } },
-    );
+    return reconciliationSummaryResponse(await runRecentBigblueReconciliation());
   } catch (error) {
-    logIntegrationEvent("reconciliation_failed", {
-      reason: error instanceof Error ? error.name : "unknown_error",
-    });
-    return Response.json(
-      { ok: false, error: "reconciliation_failed" },
-      { status: 503, headers: { "Cache-Control": "no-store" } },
-    );
+    logIntegrationEvent("reconciliation_failed", { reason: describeErrorForLog(error) });
+    return reconciliationFailedResponse();
   }
 }

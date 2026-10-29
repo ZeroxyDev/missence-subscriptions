@@ -1,21 +1,41 @@
+/**
+ * @file Read-only smoke test of the detection rules and the Bigblue API.
+ *
+ * Run with `pnpm dry-run:bigblue` (or `pnpm missence dry-run`). It:
+ * 1. checks every configured pair is detected on a synthetic first-shipment
+ *    order and is *not* triggered by a renewal;
+ * 2. authenticates against Bigblue and fetches one `ListOrders` page;
+ * 3. validates the shape of one real order with the production parser.
+ *
+ * Strictly read-only: it never calls `UpdateOrder` and never prints order data.
+ *
+ * @module scripts/bigblue-dry-run
+ */
+
 import { cancel, intro, log, outro } from "@clack/prompts";
 
 import { PRODUCT_PAIRS } from "@/config/subscription-product-pairs";
-import { BigblueApiError, createBigblueClient } from "@/lib/bigblue/client";
+import { createBigblueClient } from "@/lib/integrations/bigblue/client";
+import { formatBigblueDateTime } from "@/lib/integrations/bigblue/datetime";
+import { BigblueApiError } from "@/lib/integrations/bigblue/errors";
 import {
-  formatBigblueDateTime,
-  parseBigblueOrder,
   parseBigblueListOrdersResponse,
-} from "@/lib/bigblue/orders";
-import type { ShopifyOrder } from "@/lib/shopify/order";
-import { detectFirstShipmentAdjustment } from "@/lib/subscriptions/first-shipment-adjustment";
+  parseBigblueOrder,
+} from "@/lib/integrations/bigblue/parsers";
+import type { ShopifyOrder } from "@/lib/integrations/shopify/order";
+import { isRecord } from "@/lib/shared/guards";
+import { detectFirstShipmentAdjustment } from "@/lib/subscriptions/domain/first-shipment-adjustment";
 
+/** Window sampled from Bigblue. */
 const ONE_DAY_MS = 24 * 60 * 60 * 1_000;
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
+/**
+ * Asserts every pair is detected on a synthetic 3× subscription + 2×
+ * experience order (target 1) and ignored on a subscription-only renewal.
+ *
+ * @returns Nothing; returns normally when every rule behaves as expected.
+ * @throws {Error} With a Spanish message naming the failing pair.
+ */
 function checkDetectionRules(): void {
   for (const [index, pair] of PRODUCT_PAIRS.entries()) {
     const combinedOrder: ShopifyOrder = {
@@ -66,6 +86,14 @@ function checkDetectionRules(): void {
   }
 }
 
+/**
+ * Fetches one page of recent Bigblue orders and parses the first order that
+ * has an external reference.
+ *
+ * @returns How many orders were visible and whether one was validated.
+ * @throws {Error} When `BIGBLUE_API_KEY` is missing.
+ * @throws {BigblueApiError} When Bigblue rejects the request.
+ */
 async function checkBigblueConnection(): Promise<{
   visibleOrders: number;
   validatedOrder: boolean;
@@ -106,6 +134,11 @@ async function checkBigblueConnection(): Promise<{
   };
 }
 
+/**
+ * Runs the dry-run and reports progress with `@clack/prompts`.
+ *
+ * @returns Resolves when every check passed.
+ */
 async function main(): Promise<void> {
   intro("MISSENCE · dry-run Bigblue");
   log.info("Modo de solo lectura: no se llamará a UpdateOrder");

@@ -1,3 +1,12 @@
+/**
+ * @file `pnpm missence` — interactive project task runner.
+ *
+ * Wraps the package scripts in a menu (or runs one directly, e.g.
+ * `pnpm missence check`) using whichever package manager invoked it.
+ *
+ * @module scripts/missence
+ */
+
 import {
   cancel,
   intro,
@@ -8,6 +17,7 @@ import {
 } from "@clack/prompts";
 import { spawn } from "node:child_process";
 
+/** Menu entries mapped to `package.json` scripts. Labels are user-facing (Spanish). */
 const COMMANDS = {
   dev: {
     label: "Iniciar desarrollo",
@@ -34,6 +44,11 @@ const COMMANDS = {
     hint: "types + lint + tests",
     script: "check",
   },
+  docs: {
+    label: "Validar documentación",
+    hint: "estándar JSDoc + referencia al día",
+    script: "docs:check",
+  },
   "dry-run": {
     label: "Probar conexión con Bigblue",
     hint: "solo lectura, no modifica pedidos",
@@ -46,13 +61,26 @@ const COMMANDS = {
   },
 } as const;
 
+/** Name of a menu command. */
 type CommandName = keyof typeof COMMANDS;
+/** Supported package managers. */
 type PackageManager = "bun" | "npm" | "pnpm" | "yarn";
 
+/**
+ * Narrows a CLI argument to a known command.
+ *
+ * @param value - Lower-cased argument.
+ * @returns `true` when the command exists.
+ */
 function isCommandName(value: string): value is CommandName {
   return value in COMMANDS;
 }
 
+/**
+ * Detects the invoking package manager from `npm_config_user_agent`.
+ *
+ * @returns The package manager, defaulting to `npm`.
+ */
 function detectPackageManager(): PackageManager {
   const userAgent = process.env.npm_config_user_agent ?? "";
 
@@ -62,6 +90,11 @@ function detectPackageManager(): PackageManager {
   return "npm";
 }
 
+/**
+ * Prints usage and the command list.
+ *
+ * @returns Nothing.
+ */
 function printHelp(): void {
   const commands = Object.entries(COMMANDS)
     .map(([name, command]) => `  ${name.padEnd(10)} ${command.label}`)
@@ -75,6 +108,11 @@ ${commands}
   help       Mostrar esta ayuda`);
 }
 
+/**
+ * Shows the interactive command menu.
+ *
+ * @returns The chosen command, or `null` if the user cancelled.
+ */
 async function chooseCommand(): Promise<CommandName | null> {
   const selected = await select<CommandName>({
     message: "¿Qué quieres hacer?",
@@ -93,6 +131,13 @@ async function chooseCommand(): Promise<CommandName | null> {
   return selected as CommandName;
 }
 
+/**
+ * Runs a package script with inherited stdio.
+ *
+ * @param packageManager - Executable to use.
+ * @param script - `package.json` script name.
+ * @returns The child's exit code (1 if it was killed by a signal).
+ */
 function runPackageScript(
   packageManager: PackageManager,
   script: string,
@@ -111,6 +156,11 @@ function runPackageScript(
   });
 }
 
+/**
+ * CLI entry point.
+ *
+ * @returns Resolves when the selected command finishes; sets `process.exitCode` on failure.
+ */
 async function main(): Promise<void> {
   const argument = process.argv[2]?.toLowerCase();
 
